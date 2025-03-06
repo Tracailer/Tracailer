@@ -1,0 +1,54 @@
+# Prerequisites
+*.d
+*.orig
+*.swp
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# Python objects
+*.pyc
+
+install/
+build/
+devel/
+
+.vscode
+*.bag
+*.active
+ampl.linux-intel64/
+log/
+log*/
+__pycache__/
+
+.catkin_workspace
+CMakeCache.txt
+CMakeFiles
+cmake_install.cmake
+ampl.linux-intel64.zip

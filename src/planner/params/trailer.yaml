@@ -1,0 +1,13 @@
+trailer:
+  wheel_base: 0.5
+  width: 0.4
+  rear_length: 0.1
+  max_steer: 0.7  # <pi/4
+  max_dtheta: 1.471  # ≈pi/2-0.1
+  terminal_tol: 0.4
+  # traillers: len0--Ltail0--Lhead0--len1--Ltial1--Lhead1--len2 ...
+
+  length: [0.6, 0.5, 0.5, 0.5]
+  Ltail: [0.0, 0.0, 0.0]
+  Lhead: [0.8, 0.8, 0.8]
+  init_pthetas: [-15.0, 6.5, -1.57, -0.707, -1.57, -2.26]

@@ -1,0 +1,5 @@
+planner_node:
+  grid_map:
+    map_size_x: 40.0
+    map_size_y: 40.0
+    resolution: 0.1

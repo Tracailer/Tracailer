@@ -1,0 +1,49 @@
+<launch>
+
+    <arg name="polygon_topic" value="/global_map_polygon" />
+    <arg name="map_topic" value="/global_map" />
+    <arg name="local_map_topic" value="/local_map" />
+    <arg name="odom_topic" value="/trailer_odom" />
+    <arg name="sensor_odom_topic" value="/sensor_odom" />
+    <arg name="cmd_topic" value="/trailer_cmd" />
+    <arg name="arc_traj_topic" value="/arc_trailer_traj" />
+    <arg name="use_sim" default="true" />
+
+    <rosparam command="load" file="$(find planner)/params/grid_map.yaml" />
+    <rosparam command="load" file="$(find planner)/params/hybrid_astar.yaml" />
+    <rosparam command="load" file="$(find planner)/params/optimizer.yaml" />
+    <rosparam command="load" file="$(find planner)/params/trailer.yaml" />
+    <rosparam command="load" file="$(find planner)/params/controller.yaml" />
+    <rosparam command="load" file="$(find random_map_generator)/params/map.yaml" />
+
+    <!-- trailer simulator -->
+    <node if="$(arg use_sim)" pkg="planner" type="simulator_node" name="simulator_node" output="screen" required="true">
+	    <remap from="~cmd" to="$(arg cmd_topic)"/>
+	    <remap from="~odom" to="$(arg odom_topic)"/>
+	    <remap from="~sensor_odom" to="$(arg sensor_odom_topic)"/>
+    </node>
+
+    <!-- mpc controller -->
+    <node if="$(arg use_sim)" pkg="planner" type="mpc_node" name="mpc_node" output="screen" required="true">
+	    <remap from="~cmd" to="$(arg cmd_topic)"/>
+	    <remap from="~odom" to="$(arg odom_topic)"/>
+	    <remap from="~arc_traj" to="$(arg arc_traj_topic)"/>
+    </node>
+
+    <!-- random map generator -->
+    <node pkg="random_map_generator" type="random_map" name="random_map" output="screen" required="true">
+        <remap from="~local_cloud" to="$(arg local_map_topic)"/>
+        <remap from="~global_cloud" to="$(arg map_topic)"/>
+        <remap from="~global_polygon" to="$(arg polygon_topic)"/>
+        <remap from="~odom" to="$(arg sensor_odom_topic)"/>
+    </node>
+  
+    <!-- planner -->
+    <node pkg="planner" type="planner_node" name="planner_node" output="screen" required="true">
+      <remap from="~odom" to="$(arg odom_topic)"/>
+    </node>
+
+    <!-- rviz -->
+    <node name="rviz" pkg="rviz" type="rviz" args="-d $(find random_map_generator)/rviz/default.rviz" required="true" />
+
+</launch>

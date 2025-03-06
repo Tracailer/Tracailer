@@ -1,0 +1,17 @@
+planner_node:
+  hybrid_astar:
+    yaw_resolution: 0.17453292519943295
+    lambda_heu: 1.0
+    weight_r2: 1.0
+    weight_delta: 0.0
+    weight_v_change: 5.0
+    weight_delta_change: 5.0
+    time_interval: 1.0
+    oneshot_range: 10.0
+    check_ratio: 0.5
+    max_vel: 0.5
+    pos_tol: 0.5
+    theta_tol: 0.2
+    max_time_consume: 5.0
+    heuristic_type: 0
+    in_test: false

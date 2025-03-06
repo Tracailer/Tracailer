@@ -1,0 +1,37 @@
+planner_node:
+  arc_opt:
+    rho_T: 50.0
+    collision_type: 0
+    corridor_limit: 3.0
+    piece_len: 1.0
+    piece_times: 1.5
+    max_alon: 2.0
+    max_alat: 10000.0
+    max_vel: 2.0
+    max_angular_vel: 2.0
+    max_kappa: 1.68
+    max_thetad: 1.47
+    safe_threshold: 0.36
+    g_epsilon: 1.0e-3
+    min_step: 1.0e-32
+    inner_max_iter: 10000
+    delta: 1.0e-4
+    mem_size: 64
+    past: 3
+    int_K: 8
+    in_debug: false
+    rho: 1.0
+    beta: 1000.0
+    gamma: 1.0
+    epsilon_con: 0.1
+    max_iter: 100
+    use_scaling: false
+    inner_weight_jerk: 0.1
+    inner_weight_kinetics: 10.0
+    inner_weight_vel: 1.0
+    inner_weight_min_vel: 1.0
+    inner_weight_alon: 5.0
+    inner_weight_alat: 2.0
+    inner_weight_kappa: 20.0
+    inner_weight_collision: 50.0
+    inner_weight_tail: 500.0

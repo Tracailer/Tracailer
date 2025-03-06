@@ -1,0 +1,16 @@
+<launch>
+
+  <arg name="map_topic" value="/global_map" />
+  <arg name="polygon_topic" value="/global_map_polygon" />
+
+  <rosparam command="load" file="$(find random_map_generator)/params/map.yaml" />
+
+  <node pkg="random_map_generator" type="random_map" name="random_map" output="screen" required="true">
+    <remap from="~global_cloud" to="$(arg map_topic)"/>
+    <remap from="~global_polygon" to="$(arg polygon_topic)"/>
+  </node>
+
+  <!-- rviz -->
+  <node name="rviz" pkg="rviz" type="rviz" args="-d $(find random_map_generator)/rviz/default.rviz" required="true" />
+
+</launch>

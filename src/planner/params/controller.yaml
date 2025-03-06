@@ -1,0 +1,12 @@
+mpc_node:
+  mpc:
+    dt: 0.1
+    predict_steps: 10
+    max_speed: 2.0
+    min_speed: 0.0
+    max_accel: 2.0
+    max_dsteer: 1.5
+    delay_num: 0
+    matrix_q: [100.0, 100.0, 1.0, 0.1]
+    matrix_r: [0.1, 0.01]
+    matrix_rd: [0.01, 10.0]
