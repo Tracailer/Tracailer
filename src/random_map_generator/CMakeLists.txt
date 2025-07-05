@@ -9,6 +9,7 @@ set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 find_package(catkin REQUIRED COMPONENTS
   roscpp
   rospy
+  roslib
   sensor_msgs
   std_msgs
   visualization_msgs

@@ -59,8 +59,7 @@ namespace trailer_planner
         if (in_plan)
             return;
 
-        Eigen::Vector4d pset(1.88, 0.73, -0.4655, 0.885);
-        Eigen::Vector3d wps(pset(0), pset(1), atan2(2.0*pset(2)*pset(3), 2.0*pow(pset(3), 2)-1.0));
+        Eigen::Vector3d wps(22.6, 5.86, 0.0);
         
         if ((wps.head(2)-odom_pos.head(2)).norm() < 0.5)
             return;
@@ -97,22 +96,12 @@ namespace trailer_planner
     {
         assert(end.size() == 3);
 
-        Eigen::VectorXd end_full = end;
-        end_full.resize(TRAILER_NUM+3);
-        end_full.setConstant(end(2));
-        Eigen::Vector2d half_box(trailer->box_length/2.0, trailer->box_width/2.0);
-        end_full.head(2) = end.head(2) + Eigen::Vector2d(cos(end(2)), sin(end(2))) 
-                                        * (trailer->box_length/2.0 - trailer->length[0] + trailer->rear_length - trailer->terminal_tol/2.0);
-        
-        if (!hybrid_astar.isValid(end_full))
-        {
-            PRINT_RED("[Planner] End state is not valid, cannot plan.");
-            return false;
+        Eigen::VectorXd end_full;
+        trailer->setStateFromBox(end, end_full);
 
-        }
-
-        // use simple front end
-        front_path = hybrid_astar.pureAstarPlan(start, end);
+        ros::Time start_time = ros::Time::now();
+        front_path = hybrid_astar.pureAstarPlan(start, end_full);
+        PRINT_GREEN("[Planner] front end time: "<<(ros::Time::now() - start_time).toSec()<<"s");
 
         if (front_path.empty())
             return false;
@@ -120,7 +109,7 @@ namespace trailer_planner
         vis_front();
 
         // arc opt
-        if (!arc_opt.optimizeTraj(front_path, 0.0))
+        if (!arc_opt.optimizeTraj(front_path))
             return false;
 
         arc_traj = arc_opt.getTraj();
@@ -156,14 +145,14 @@ namespace trailer_planner
             line_strip.id = i + 1000;
 
             sphere.pose.orientation.w = line_strip.pose.orientation.w = 1.0;
-            sphere.color.r = line_strip.color.r = trailer->array_msg.markers[i].color.r;
-            sphere.color.g = line_strip.color.g = trailer->array_msg.markers[i].color.g;
-            sphere.color.b = line_strip.color.b = trailer->array_msg.markers[i].color.b;
+            sphere.color.r = line_strip.color.r = 0.8;
+            sphere.color.g = line_strip.color.g = 0.0;
+            sphere.color.b = line_strip.color.b = 0.0;
             sphere.color.a = line_strip.color.a = 1;
-            sphere.scale.x = 0.08;
-            sphere.scale.y = 0.08;
-            sphere.scale.z = 0.08;
-            line_strip.scale.x = 0.08 / 2;
+            sphere.scale.x = 0.1;
+            sphere.scale.y = 0.1;
+            sphere.scale.z = 0.1;
+            line_strip.scale.x = 0.1 / 2;
             geometry_msgs::Point pt;
             
             for (auto p:se2_path)
@@ -205,7 +194,7 @@ namespace trailer_planner
 
         for (size_t i=0; i<TRAILER_NUM+1; i++)
         {
-            double scale = 0.12;
+            double scale = 0.2;
             visualization_msgs::Marker line_strip;
             line_strip.header.frame_id = "world";
             line_strip.header.stamp = ros::Time::now();

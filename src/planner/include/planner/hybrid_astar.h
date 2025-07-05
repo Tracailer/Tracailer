@@ -139,10 +139,6 @@ namespace trailer_planner
             Eigen::VectorXd target_pos;
 
         public:
-            // debug
-            double planning_time = 0.0;
-
-        public:
             HybridAstar() {}
             ~HybridAstar()
             {
@@ -153,10 +149,7 @@ namespace trailer_planner
             void init(ros::NodeHandle& nh);
             void visExpanded();
             std::vector<Eigen::VectorXd> plan(const Eigen::VectorXd& start_state, const Eigen::VectorXd& end_state);
-            std::vector<Eigen::VectorXd> planAckermann(const Eigen::VectorXd& start_state, 
-                                                       const std::vector<Eigen::VectorXd>& ends);
-            void setFullPath(const std::vector<Eigen::VectorXd>& astar_path,
-                            std::vector<Eigen::VectorXd>& path);
+            std::vector<Eigen::VectorXd> planAckermann(const Eigen::Vector3d& start_state, const Eigen::Vector3d& end_state);
             std::vector<Eigen::VectorXd> pureAstarPlan(const Eigen::VectorXd& start_state, const Eigen::VectorXd& end_state);
 
             inline void setTrailerEnv(Trailer::Ptr t, GridMap::Ptr g);

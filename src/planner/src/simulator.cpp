@@ -6,7 +6,6 @@
 #include <vector>
 #include <nav_msgs/Odometry.h>
 #include <ackermann_msgs/AckermannDrive.h>
-#include <visualization_msgs/Marker.h>
 #include "planner/trailer.hpp"
 #include "planner/TrailerState.h"
 #include "tf/transform_broadcaster.h"
@@ -31,8 +30,7 @@ bool rcv_cmd = false;
 double time_resolution = 0.01;
 double time_delay = 0.0;
 double noise_std = 0.0;
-double max_speed = 2.0;
-double max_steer = 0.7;
+double max_speed = 10.0;
 
 void normYaw(double& th)
 {
@@ -82,7 +80,7 @@ void simCallback(const ros::TimerEvent &e)
 	odom_temp.header.frame_id = "world";
 
 	double v = max(min((double)im_cmd.speed, max_speed), -max_speed) + guassRandom(noise_std);
-	double delta = max(min((double)im_cmd.steering_angle, max_steer), -max_steer) + guassRandom(noise_std);
+	double delta = max(min((double)im_cmd.steering_angle, trailer.max_steer), -trailer.max_steer) + guassRandom(noise_std);
 	Eigen::VectorXd new_state, new_se2_state, v_state, w_state;
 	new_state = state;
 	v_state.resize(TRAILER_NUM+1);

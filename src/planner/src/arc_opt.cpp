@@ -46,7 +46,7 @@ namespace trailer_planner
     }
 
     bool ArcOpt::optimizeTraj(std::vector<Eigen::VectorXd> init_path, 
-                              double init_vel, int piece_num,
+                              Eigen::Vector2d init_vw, int piece_num,
                               Eigen::MatrixXd local_pts)
     {
         if (init_path.empty())
@@ -90,12 +90,17 @@ namespace trailer_planner
         end_pos.col(1) << cos(init_path.back()[2]), sin(init_path.back()[2]);
         init_theta.col(0) = init_path[0].segment(3, TRAILER_NUM);
         end_theta.col(0) = init_path.back().segment(3, TRAILER_NUM);
-        start_v = init_vel;
-        double temp_vel = init_vel;
+        start_v = init_vw(0);
+        double temp_vel = init_vw(0);
+        double temp_w = init_vw(1);
         for (size_t i=0; i<TRAILER_NUM; i++)
         {
-            init_theta.col(1)[i] = temp_vel * sin(init_path[0][2+i] - init_path[0][3+i]) / trailer->Lhead[i];
-            temp_vel *= cos(init_path[0][2+i] - init_path[0][3+i]);
+            init_theta.col(1)[i] = (temp_vel * sin(init_path[0][2+i] - init_path[0][3+i]) 
+                                    - temp_w * cos(init_path[0][2+i] - init_path[0][3+i]) * trailer->Ltail[i])
+                                    / trailer->Lhead[i];
+            temp_vel = temp_vel * cos(init_path[0][2+i] - init_path[0][3+i])
+                        + temp_w * trailer->Ltail[i] *sin(init_path[0][2+i] - init_path[0][3+i]);
+            temp_w = init_theta.col(1)[i];
         }
 
         // compute length and set init time
@@ -109,6 +114,7 @@ namespace trailer_planner
             piece_num_pos = max((int) (total_len / piece_len), 2);
         else
             piece_num_pos = piece_num;
+        std::cout<<"piece_num_pos = "<<piece_num_pos<<std::endl;
         piece_num_theta = piece_times * piece_num_pos;
 
         // initialize variables
@@ -184,7 +190,8 @@ namespace trailer_planner
         // non_equal_num = piece_num_pos * (int_K + 1) * (4 + TRAILER_NUM*2);
         if (collision_type == ESDF)
         {
-            non_equal_num += piece_num_pos * int_K * (TRAILER_NUM + 1);
+            non_equal_num += piece_num_pos * int_K * (TRAILER_NUM + 3);
+            // non_equal_num += piece_num_pos * int_K * (TRAILER_NUM + 1);
         }
 
         // tail variables
@@ -205,6 +212,8 @@ namespace trailer_planner
         scale_cx.resize(equal_num+non_equal_num);
         scale_cx.setConstant(1.0);
         rho = rho_init;
+
+        std::cout<<"variable_num = "<<variable_num<<std::endl;
 
         // init solution
         Eigen::VectorXd x;
@@ -590,12 +599,13 @@ namespace trailer_planner
         double base_time = 0.0;
         double base_arc = 0.0;
 
-        double theta0, vlon, inv_vlon, inv_vlon2, alon, alat, curv, curv_snorm;
+        double theta0, vlon, inv_vlon, inv_vlon2, alon, alat, curv, curv_snorm, dtheta0;
         Eigen::VectorXd theta_diff, sthetad, cthetad;
         theta_diff.resize(TRAILER_NUM);
         sthetad.resize(TRAILER_NUM);
         cthetad.resize(TRAILER_NUM);
 
+        int corridor_idx = 0;
         for (int i=0; i<piece_num_pos; i++)
         {
             const Eigen::Matrix<double, 6, 1> &c = arc_opt.getCoeffs().block<6, 1>(i * 6, 0);
@@ -605,6 +615,7 @@ namespace trailer_planner
 
             for (int j=1; j<=int_K; j++)
             {
+                clock_t t1 = clock();
                 alpha = 1.0 / int_K * j;
                 // double omg = (j == 0 || j == int_K) ? 0.5 : 1.0;
 
@@ -621,6 +632,7 @@ namespace trailer_planner
                 grad_vtrailer.setZero();
                 grad_ptrailer.setZero();
                 double grad_theta0 = 0.0;
+                double grad_dtheta0 = 0.0;
 
                 // analyse arc
                 s2_arc = s1_arc * s1_arc;
@@ -680,6 +692,7 @@ namespace trailer_planner
                 alat = (acc(1)*vel(0) - acc(0)*vel(1)) * inv_vlon * darc * darc;
                 curv = (acc(1)*vel(0) - acc(0)*vel(1)) * inv_vlon * inv_vlon2;
                 curv_snorm = curv * curv;
+                dtheta0 = darc * (acc(1)*vel(0) - acc(0)*vel(1)) * inv_vlon2;
 
                 theta_diff[0] = theta0 - theta[0];
                 sthetad[0] = sin(theta_diff[0]);
@@ -697,7 +710,10 @@ namespace trailer_planner
                 {
                     double kinetics_lambda = lambda[equal_idx];
                     // hx[equal_idx] = (vtrailer[k]*sthetad[k] - trailer->Lhead[k]*dtheta[k]) * 100.0;
-                    hx[equal_idx] = (vtrailer[k]*sthetad[k] - trailer->Lhead[k]*dtheta[k]) * scale_cx(constrain_idx);
+                    // hx[equal_idx] = (vtrailer[k]*sthetad[k] - trailer->Lhead[k]*dtheta[k]) * scale_cx(constrain_idx);
+                    double temp_dth = k > 0? dtheta[k-1] : dtheta0;
+                    hx[equal_idx] = (vtrailer[k]*sthetad[k] - trailer->Lhead[k]*dtheta[k] 
+                                    - trailer->Ltail[k] * temp_dth * cthetad[k]) * scale_cx(constrain_idx);
                     double kinetics_cost = getAugmentedCost(hx[equal_idx], kinetics_lambda) * inner_weight_kinetics;
                     cost += kinetics_cost;
 
@@ -706,18 +722,23 @@ namespace trailer_planner
                     grad_vtrailer[k] = kinetics_grad * sthetad[k];
                     if (k>0)
                     {
-                        grad_theta[k-1] += kinetics_grad * vtrailer[k] * cthetad[k];
+                        grad_theta[k-1] += kinetics_grad * (vtrailer[k] * cthetad[k]
+                                            +trailer->Ltail[k] * temp_dth * sthetad[k]);
+                        grad_dtheta[k-1] -= kinetics_grad * trailer->Ltail[k] * cthetad[k];
                     }
                     else
                     {
-                        grad_theta0 += kinetics_grad * vtrailer[k] * cthetad[k];
+                        grad_theta0 += kinetics_grad * (vtrailer[k] * cthetad[k]
+                                        +trailer->Ltail[k] * temp_dth * sthetad[k]);
+                        grad_dtheta0 -= kinetics_grad * trailer->Ltail[k] * cthetad[k];
                     }
                         
-                    grad_theta[k] -= kinetics_grad * vtrailer[k] * cthetad[k];
+                    grad_theta[k] -= kinetics_grad * (vtrailer[k] * cthetad[k]
+                                    +trailer->Ltail[k] * temp_dth * sthetad[k]);
                     grad_dtheta[k] -= kinetics_grad * trailer->Lhead[k];
                     equal_idx++;
                     constrain_idx++;
-                    vtrailer[k+1] = vtrailer[k] * cthetad[k];
+                    vtrailer[k+1] = vtrailer[k] * cthetad[k] + trailer->Ltail[k] * temp_dth * sthetad[k];
                 }
                 for (int k=TRAILER_NUM-1; k>=0; k--)
                 {
@@ -728,15 +749,20 @@ namespace trailer_planner
                     }
                     else if (k==1)
                     {
-                        grad_theta0 -= grad_vtrailer[k] * sthetad[k-1] * vtrailer[k-1];
+                        grad_dtheta0 += grad_vtrailer[k] * sthetad[k-1] * trailer->Ltail[k-1];
+                        grad_theta0 -= grad_vtrailer[k] * (sthetad[k-1] * vtrailer[k-1]
+                                                                - trailer->Ltail[k-1] * dtheta0 * cthetad[k-1]);
                         grad_theta[k-1] += grad_vtrailer[k] * sthetad[k-1] * vtrailer[k-1];
                         grad_vtrailer[k-1] += grad_vtrailer[k] * cthetad[k-1];
 
                     }
                     else
                     {
-                        grad_theta[k-2] -= grad_vtrailer[k] * sthetad[k-1] * vtrailer[k-1];
-                        grad_theta[k-1] += grad_vtrailer[k] * sthetad[k-1] * vtrailer[k-1];
+                        grad_dtheta[k-2] += grad_vtrailer[k] * sthetad[k-1] * trailer->Ltail[k-1];
+                        grad_theta[k-2] -= grad_vtrailer[k] * (sthetad[k-1] * vtrailer[k-1]
+                                                                - trailer->Ltail[k-1] * dtheta[k-2] * cthetad[k-1]);
+                        grad_theta[k-1] += grad_vtrailer[k] * (sthetad[k-1] * vtrailer[k-1]
+                                                                - trailer->Ltail[k-1] * dtheta[k-2] * cthetad[k-1]);
                         grad_vtrailer[k-1] += grad_vtrailer[k] * cthetad[k-1];
                     }
                 }
@@ -880,9 +906,41 @@ namespace trailer_planner
                     double sdf_value;
                     Eigen::Vector2d sdf_grad;
 
-                    ptrailer.col(0) = pos + Eigen::Vector2d(cos(theta0), sin(theta0)) * 
-                                                (trailer->length[0]*0.5 - trailer->rear_length);
-                    for (size_t k=0; k<TRAILER_NUM+1; k++)
+                    std::vector<double> tractor_points; 
+                    std::vector<double> tractor_radius; 
+
+                    tractor_points.push_back(0.0);   tractor_radius.push_back(0.8);
+                    tractor_points.push_back(0.9);  tractor_radius.push_back(0.8);
+                    tractor_points.push_back(1.9);   tractor_radius.push_back(0.8);
+
+                    for (size_t k=0; k<tractor_points.size(); k++)
+                    {
+                        Eigen::Vector2d penal_point = pos + Eigen::Vector2d(cos(theta0), sin(theta0)) * tractor_points[k];
+                        Eigen::Vector2d now_grad_p = Eigen::Vector2d::Zero();
+                        grid_map->getDisWithGradI(penal_point, sdf_value, sdf_grad);
+                        double colli_mu = mu[non_equal_idx];
+                        gx[non_equal_idx] = (tractor_radius[k] - sdf_value) * scale_cx(constrain_idx);
+                        if (rho * gx[non_equal_idx] + colli_mu > 0)
+                        {
+                            collision_cost = getAugmentedCost(gx[non_equal_idx], colli_mu) * inner_weight_collision;
+                            aug_grad = getAugmentedGrad(gx[non_equal_idx], colli_mu) * scale_cx(constrain_idx) * inner_weight_collision;
+                            now_grad_p = -aug_grad * sdf_grad;
+                            grad_ptrailer.col(0) += now_grad_p;
+                        }
+                        else
+                        {
+                            collision_cost = -0.5 * colli_mu * colli_mu / rho * inner_weight_collision;
+                        }
+                        cost += collision_cost;
+                        non_equal_idx++;
+                        constrain_idx++;
+                        grad_theta0 += now_grad_p.dot(Eigen::Vector2d(-sin(theta0), cos(theta0))) * tractor_points[k];
+                    }
+
+                    ptrailer.col(0) = pos;
+                    ptrailer.col(1) = ptrailer.col(0) - Eigen::Vector2d(cos(theta[0]), sin(theta[0]))*trailer->Lhead[0]
+                                        - Eigen::Vector2d(cos(theta0), sin(theta0))*trailer->Ltail[0];
+                    for (size_t k=1; k<TRAILER_NUM+1; k++)
                     {
                         grid_map->getDisWithGradI(ptrailer.col(k), sdf_value, sdf_grad);
                         double colli_mu = mu[non_equal_idx];
@@ -900,31 +958,45 @@ namespace trailer_planner
                         cost += collision_cost;
                         non_equal_idx++;
                         constrain_idx++;
-                        if (k == 0) ptrailer.col(k) = pos;
                         if (k<TRAILER_NUM)
                         {
-                            ptrailer.col(k+1) = ptrailer.col(k) - Eigen::Vector2d(cos(theta[k]), sin(theta[k]))*trailer->Lhead[k];
+                            ptrailer.col(k+1) = ptrailer.col(k) - Eigen::Vector2d(cos(theta[k]), sin(theta[k]))*trailer->Lhead[k]
+                                                - Eigen::Vector2d(cos(theta[k-1]), sin(theta[k-1]))*trailer->Ltail[k];
                         }
                     }
-                    grad_theta0 += grad_ptrailer.col(0).dot(Eigen::Vector2d(-sin(theta0), cos(theta0))) * 
-                                                (trailer->length[0]*0.5 - trailer->rear_length);
                     for (int k=TRAILER_NUM; k>=0; k--)
                     {
                         if (k==0)
                         {
                             grad_p += grad_ptrailer.col(k);
                         }
+                        else if (k==1)
+                        {
+                            grad_ptrailer.col(k-1) += grad_ptrailer.col(k);
+                            grad_theta[k-1] -= grad_ptrailer.col(k).dot(Eigen::Vector2d(-sin(theta[k-1]), cos(theta[k-1])))
+                                                                    *trailer->Lhead[k-1];
+                            grad_theta0 -= grad_ptrailer.col(k).dot(Eigen::Vector2d(-sin(theta0), cos(theta0)))
+                                                                    *trailer->Ltail[k-1];
+                        }
                         else
                         {
                             grad_ptrailer.col(k-1) += grad_ptrailer.col(k);
                             grad_theta[k-1] -= grad_ptrailer.col(k).dot(Eigen::Vector2d(-sin(theta[k-1]), cos(theta[k-1])))
                                                                     *trailer->Lhead[k-1];
+                            grad_theta[k-2] -= grad_ptrailer.col(k).dot(Eigen::Vector2d(-sin(theta[k-2]), cos(theta[k-2])))
+                                                                    *trailer->Ltail[k-1];
                         }
                     }
                 }
-                
+
                 grad_v(0) -= grad_theta0 * inv_vlon2 * vel(1);
                 grad_v(1) += grad_theta0 * inv_vlon2 * vel(0);
+
+                // NOTO: dtheta0 = darc * (acc(1)*vel(0) - acc(0)*vel(1)) * inv_vlon2;
+                grad_darc += grad_dtheta0 * (acc(1)*vel(0) - acc(0)*vel(1)) * inv_vlon2;
+                grad_a += grad_dtheta0 * darc * inv_vlon2 * Eigen::Vector2d(-vel(1), vel(0));
+                grad_v += grad_dtheta0 * darc * inv_vlon2 * Eigen::Vector2d(acc(1), -acc(0));
+                grad_v -= 2.0 * grad_dtheta0 * darc * (acc(1)*vel(0) - acc(0)*vel(1)) * inv_vlon2 * inv_vlon2 * vel;
                 
                 // add all grad into C,T
                 // note that xy = Cxy*β(a-a_last), yaw = Cyaw*β(i*T_xy+j/K*T_xy-theta_idx*T_yaw)
@@ -1043,6 +1115,8 @@ namespace trailer_planner
         std::vector<Eigen::Vector2d> grad_r2_state;
         for (size_t k=0; k<TRAILER_NUM; k++)
         {
+            double ct_pre = ct;
+            double st_pre = st;
             grad_r2_state.push_back(Eigen::Vector2d::Zero());
             theta_now = theta_now - dtheta_end(k);
             ct = cos(theta_now);
@@ -1054,12 +1128,23 @@ namespace trailer_planner
             car_R_dot << -st, -ct, ct, -st;
             h = trailer->length[k+1] / 2.0;
             bps.clear();
-            bps.push_back(Eigen::Vector2d(h, w));
-            bps.push_back(Eigen::Vector2d(h, -w));
-            bps.push_back(Eigen::Vector2d(-h, -w));
-            bps.push_back(Eigen::Vector2d(-h, w));
-            traileri(0) = traileri(0) - trailer->Lhead[k]*ct;
-            traileri(1) = traileri(1) - trailer->Lhead[k]*st;
+            if (k % 2 == 1)
+            {
+                bps.push_back(Eigen::Vector2d(trailer->length[k+1] - trailer->rear_length, w));
+                bps.push_back(Eigen::Vector2d(trailer->length[k+1] - trailer->rear_length, -w));
+                bps.push_back(Eigen::Vector2d(-trailer->rear_length, -w));
+                bps.push_back(Eigen::Vector2d(-trailer->rear_length, w));
+            }
+            else
+            {
+                bps.push_back(Eigen::Vector2d(0.1, w));
+                bps.push_back(Eigen::Vector2d(0.1, -w));
+                bps.push_back(Eigen::Vector2d(-0.1, -w));
+                bps.push_back(Eigen::Vector2d(-0.1, w));
+            }
+            
+            traileri(0) = traileri(0) - trailer->Lhead[k]*ct - trailer->Ltail[k]*ct_pre;
+            traileri(1) = traileri(1) - trailer->Lhead[k]*st - trailer->Ltail[k]*st_pre;
             for (int j=0; j<4; j++)
             {
                 for (int i=0; i<4; i++)
@@ -1090,11 +1175,15 @@ namespace trailer_planner
         for (int k=TRAILER_NUM-1; k>=0; k--)
         {
             if (k>0)
+            {
                 grad_r2_state[k-1] += grad_r2_state[k];
+                gdTail(k-1) += trailer->Ltail[k] * grad_r2_state[k].dot(Eigen::Vector2d(stheta[k-1], -ctheta[k-1]));
+            }
             gdTail(k) += trailer->Lhead[k] * grad_r2_state[k].dot(Eigen::Vector2d(stheta[k], -ctheta[k]));
         }
 
         gradTailtractor_temp.head(2) += grad_r2_state[0];
+        gradTailtractor_temp[2] += trailer->Ltail[0] * grad_r2_state[0].dot(Eigen::Vector2d(sin(Tailtractor_temp(2)), -cos(Tailtractor_temp(2))));
 
         return;
     }
@@ -1177,10 +1266,10 @@ namespace trailer_planner
             obj.head_opt.generate(obj.init_pos, tractor_end, Ppos, Arc);
             obj.tails_opt.generate(obj.init_theta, trailer_end, Ptheta, Ttheta);
 
-            ArcTraj temp_traj = obj.getTraj();
-            obj.pubDebugTraj(temp_traj);
+            // ArcTraj temp_traj = obj.getTraj();
+            // obj.pubDebugTraj(temp_traj);
 
-            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            // std::this_thread::sleep_for(std::chrono::milliseconds(10));
         }
         return k > obj.inner_max_iter;
     }

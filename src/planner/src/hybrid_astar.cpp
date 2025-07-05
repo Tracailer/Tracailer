@@ -30,16 +30,44 @@ namespace trailer_planner
         return;
     }
 
-    void HybridAstar::setFullPath(const std::vector<Eigen::VectorXd>& astar_path,
-                                std::vector<Eigen::VectorXd>& path)
+    std::vector<Eigen::VectorXd> HybridAstar::pureAstarPlan(const Eigen::VectorXd& start_state, const Eigen::VectorXd& end_state)
     {
+        if (!set_done)
+        {
+            ROS_ERROR("[Hybrid A*] No Setting! Can't begin planning!");
+            return front_end_path;
+        }
+
+        front_end_path.clear();
+        if (!isValid(start_state))
+        {
+            ROS_ERROR("[Hybrid A*] start is not free!!!");
+            return front_end_path;
+        }
+        if (!isValid(end_state))
+        {
+            ROS_ERROR("[Hybrid A*] goal is not free!!!");
+            return front_end_path;
+        }
+
+        front_end_path.push_back(start_state);
+
+        // auto astar_result = grid_map->astarPlan(start_state.head(2), end_state.head(2));
+        // auto astar_path = astar_result.first;
+        auto astar_path = planAckermann(start_state.head(3), end_state.head(3));
+        if (astar_path.empty())
+        {
+            front_end_path.clear();
+            return front_end_path;
+        }
+
         Eigen::VectorXd dtheta;
         dtheta.resize(TRAILER_NUM+1);
         dtheta.setZero();
-        Eigen::VectorXd temp_state = path.back();
+        Eigen::VectorXd temp_state = start_state;
         for (size_t i=1; i<astar_path.size(); i++)
         {
-            Eigen::VectorXd last_state = path.back();
+            Eigen::VectorXd last_state = front_end_path.back();
             double yaw = astar_path[i].z();
 
             Eigen::VectorXd state;
@@ -55,7 +83,7 @@ namespace trailer_planner
             {
                 double sthetad = sin(last_state(j+2)-last_state(j+3));
                 double cthetad = cos(last_state(j+2)-last_state(j+3));
-                dtheta(j+1) = v * sthetad / trailer->Lhead[j];
+                dtheta(j+1) = (v * sthetad - dtheta(j) * cthetad * trailer->Ltail[j]) / trailer->Lhead[j];
                 temp_state(j+3) = normalizedAngle(last_state(j+3) + dtheta(j+1));
                 double thetad = temp_state(j+3) - temp_state(j+2);
                 if (thetad > M_PI)
@@ -66,61 +94,31 @@ namespace trailer_planner
                     temp_state(j+3) = normalizedAngle(temp_state(j+2) + trailer->max_dtheta);
                 else if (thetad < -trailer->max_dtheta)
                     temp_state(j+3) = normalizedAngle(temp_state(j+2) - trailer->max_dtheta);
-                v = v * cthetad;
+                    
+                v = v * cthetad + sthetad * dtheta(j) * trailer->Ltail[j];
             }
-            path.push_back(temp_state);
+
+            front_end_path.push_back(temp_state);
         }
+        // front_end_path.push_back(end_state);
 
-        return;
-    }
-
-    std::vector<Eigen::VectorXd> HybridAstar::pureAstarPlan(const Eigen::VectorXd& start_state, const Eigen::VectorXd& end_state)
-    {
-        assert(end_state.size() == 3);
-
-        if (!set_done)
-        {
-            ROS_ERROR("[Hybrid A*] No Setting! Can't begin planning!");
-            return front_end_path;
-        }
-
-        front_end_path.clear();
-        if (!isValid(start_state))
-        {
-            ROS_ERROR("[Hybrid A*] start is not free!!!");
-            return front_end_path;
-        }
-
-        std::vector<double> errors{0.0, 0.0};
-        std::vector<double> path_len{1.0e+10, 1.0e+10};
-        std::vector<Eigen::VectorXd> ends;
-        Eigen::VectorXd end_full;
-        Eigen::VectorXd end_temp = end_state;
-        trailer->setStateFromBox(end_temp, end_full);
-        if (isValid(end_full))
-            ends.push_back(end_full);
-
-        end_temp(2) += M_PI;
-        trailer->normYaw(end_temp(2));
-        trailer->setStateFromBox(end_temp, end_full);
-        if (isValid(end_full))
-            ends.push_back(end_full);
-
-        // auto astar_result = grid_map->astarPlan(start_state.head(2), end_state.head(2));
-        // auto astar_path = astar_result.first;
-        front_end_path = planAckermann(start_state, ends);
+        // PRINT_GREEN("front path:");
+        // for (size_t i=0; i<front_end_path.size(); i++)
+        // {
+        //     PRINT_GREEN(front_end_path[i].transpose());
+        // }
 
         return front_end_path;
     }
 
-    std::vector<Eigen::VectorXd> HybridAstar::planAckermann(const Eigen::VectorXd& start_state_full, 
-                                                            const std::vector<Eigen::VectorXd>& ends)
+    std::vector<Eigen::VectorXd> HybridAstar::planAckermann(const Eigen::Vector3d& start_state, const Eigen::Vector3d& end_state)
     {
         // reset
         int use_node_num = 0;
         int iter_num = 0;
         std::priority_queue<PathNodePtr, std::vector<PathNodePtr>, NodeComparator> empty_queue;
         open_set.swap(empty_queue);
+        std::vector<Eigen::VectorXd> ackermann_path;
         expanded_nodes.clear();
         expanded_points.clear();
         for (int i = 0; i < allocate_num; i++)
@@ -130,25 +128,6 @@ namespace trailer_planner
             node->node_state = NOT_EXPAND;
         }
 
-        Eigen::Vector3d start_state = start_state_full.head(3);
-        Eigen::Vector2d end_center = Eigen::Vector2d::Zero();
-        std::vector<bool> path_ok;
-        std::vector<double> errors;
-        std::vector<Eigen::Vector3d> end_states;
-        std::vector<std::vector<Eigen::VectorXd>> paths;
-        int min_idx = -1;
-        double min_error = 1.0e+10;
-        for (size_t i=0; i<ends.size(); i++)
-        {
-            path_ok.push_back(false);
-            errors.push_back(0.0);
-            end_states.push_back(ends[i].head(3));
-            std::vector<Eigen::VectorXd> path;
-            paths.push_back(path);
-            end_center += end_states[i].head(2);
-        }
-        end_center /= ends.size();
-
         ros::Time t0 = ros::Time::now();
         PathNodePtr cur_node = path_node_pool[0];
         cur_node->parent = NULL;
@@ -156,8 +135,11 @@ namespace trailer_planner
         stateToIndexAckermann(cur_node->state, cur_node->index);
         cur_node->g_score = 0.0;
         cur_node->input = Eigen::Vector2d::Zero();
-        cur_node->f_score = lambda_heu * tie_breaker * (cur_node->state.head(2) - end_center).norm();
+        cur_node->f_score = lambda_heu * tie_breaker * (cur_node->state.head(2) - end_state.head(2)).norm();
         cur_node->node_state = OPEN;
+
+        Eigen::VectorXi end_index;
+        stateToIndexAckermann(end_state, end_index);
 
         open_set.push(cur_node);
         use_node_num += 1;
@@ -168,74 +150,18 @@ namespace trailer_planner
             cur_node = open_set.top();
 
             visExpanded();
-
-            for (size_t i=0; i<ends.size(); i++)
+            
+            if((cur_node->state.head(2) - end_state.head(2)).norm() < oneshot_range)
             {
-                if (path_ok[i])
-                    continue;
+                // ros::Time t1 = ros::Time::now();
+                asignShotTrajAckermann(cur_node->state, end_state);
 
-                if((cur_node->state.head(2) - end_states[i].head(2)).norm() < oneshot_range)
+                if (!shot_path.empty())
                 {
-                    // ros::Time t1 = ros::Time::now();
-                    asignShotTrajAckermann(cur_node->state, end_states[i]);
-
-                    if (!shot_path.empty())
-                    {
-                        // std::cout << "[Hybrid A*] one-shot time: " << (ros::Time::now()-t1).toSec()*1000 << " ms"<<std::endl;
-                        // std::cout << "[Hybrid A*] front once time: " << (ros::Time::now()-t0).toSec()*1000 << " ms"<<std::endl;
-                        std::vector<Eigen::VectorXd> ackermann_path;
-                        for (int j=shot_path.size()-1; j>=0; j--)
-                            ackermann_path.push_back(shot_path[j]);
-                        ackermann_path.push_back(cur_node->state);
-                        while (cur_node->parent != NULL)
-                        {
-                            cur_node = cur_node->parent;
-                            ackermann_path.push_back(cur_node->state);
-                        }
-                        reverse(ackermann_path.begin(), ackermann_path.end());
-                        std::vector<Eigen::VectorXd> full_path;
-                        full_path.push_back(start_state_full);
-                        setFullPath(ackermann_path, full_path);
-                        path_ok[i] = true;
-                        errors[i] = trailer->stateError(ends[i], full_path.back());
-                        paths[i] = full_path;
-                        if (errors[i] < min_error)
-                        {
-                            min_error = errors[i];
-                            min_idx = i;
-                        }
-                    }
-                }
-            }
-
-            bool full_ok = true;
-            for (size_t i=0; i<ends.size(); i++)
-            {
-                if (!path_ok[i])
-                {
-                    full_ok = false;
-                    break;
-                }
-            }
-
-            if (full_ok)
-            {
-                std::cout << "[Hybrid A*] front all time: " << (ros::Time::now()-t0).toSec()*1000 << " ms"<<std::endl;
-                planning_time = (ros::Time::now()-t0).toSec() * 1000.0;
-                return paths[min_idx];
-            }
-
-            for (size_t i=0; i<ends.size(); i++)
-            {
-                if (path_ok[i])
-                    continue;
-
-                if ((cur_node->state.head(2)-end_states[i].head(2)).norm() < pos_tol)
-                {
+                    // std::cout << "[Hybrid A*] one-shot time: " << (ros::Time::now()-t1).toSec()*1000 << " ms"<<std::endl;
                     std::cout << "[Hybrid A*] front once time: " << (ros::Time::now()-t0).toSec()*1000 << " ms"<<std::endl;
-                    std::vector<Eigen::VectorXd> ackermann_path;
-                    for (int j=shot_path.size()-1; j>=0; j--)
-                            ackermann_path.push_back(shot_path[i]);
+                    for (int i=shot_path.size()-1; i>=0; i--)
+                        ackermann_path.push_back(shot_path[i]);
                     ackermann_path.push_back(cur_node->state);
                     while (cur_node->parent != NULL)
                     {
@@ -243,48 +169,31 @@ namespace trailer_planner
                         ackermann_path.push_back(cur_node->state);
                     }
                     reverse(ackermann_path.begin(), ackermann_path.end());
-                    std::vector<Eigen::VectorXd> full_path;
-                    full_path.push_back(start_state_full);
-                    setFullPath(ackermann_path, full_path);
-                    path_ok[i] = true;
-                    errors[i] = trailer->stateError(ends[i], full_path.back());
-                    paths[i] = full_path;
-                    if (errors[i] < min_error)
-                    {
-                        min_error = errors[i];
-                        min_idx = i;
-                    }
+                    return ackermann_path;
                 }
-            }
-
-            full_ok = true;
-            for (size_t i=0; i<ends.size(); i++)
-            {
-                if (!path_ok[i])
-                {
-                    full_ok = false;
-                    break;
-                }
-            }
-
-            if (full_ok)
-            {
-                std::cout << "[Hybrid A*] front all time: " << (ros::Time::now()-t0).toSec()*1000 << " ms"<<std::endl;
-                planning_time = (ros::Time::now()-t0).toSec() * 1000.0;
-                return paths[min_idx];
             }
 
             double time_consume = (ros::Time::now()-t0).toSec();
+            if ((cur_node->state.head(2)-end_state.head(2)).norm() < pos_tol)
+            {
+                std::cout << "[Hybrid A*] front all time: " << time_consume*1000 << " ms"<<std::endl;
+                for (int i=shot_path.size()-1; i>=0; i--)
+                        ackermann_path.push_back(shot_path[i]);
+                ackermann_path.push_back(cur_node->state);
+                while (cur_node->parent != NULL)
+                {
+                    cur_node = cur_node->parent;
+                    ackermann_path.push_back(cur_node->state);
+                }
+
+                reverse(ackermann_path.begin(), ackermann_path.end());
+                return ackermann_path;
+            }
+            
             if (time_consume > max_time_consume)
             {
-                if (min_idx != -1)
-                {
-                    planning_time = (ros::Time::now()-t0).toSec() * 1000.0;
-                    return paths[min_idx];
-                }
-                else
-                    std::cout << "[Hybrid A*] hybrid A* time out, front all time: " << time_consume*1000 << " ms"<<std::endl;
-                return paths[0];
+                std::cout << "[Hybrid A*] hybrid A* time out, front all time: " << time_consume*1000 << " ms"<<std::endl;
+                return ackermann_path;
             }
 
             open_set.pop();
@@ -296,7 +205,7 @@ namespace trailer_planner
             Eigen::Vector2d ctrl_input;
             std::vector<Eigen::Vector2d> inputs;
 
-            for (double v = 0.0; v <= max_vel + 1e-3; v += 0.5 * max_vel)
+            for (double v = 0.5 * max_vel; v <= max_vel + 1e-3; v += 0.5 * max_vel)
             {
                 for (double steer = -trailer->max_steer; steer <= trailer->max_steer + 1e-3; steer += 0.5 * trailer->max_steer)
                 {
@@ -348,7 +257,7 @@ namespace trailer_planner
                 tmp_g_score += weight_v_change * std::fabs(input(0)-cur_node->input(0));
                 tmp_g_score += weight_delta_change * std::fabs(input(1)-cur_node->input(1));
                 tmp_g_score += cur_node->g_score;
-                tmp_f_score = tmp_g_score + lambda_heu * tie_breaker * (pro_state.head(2) - end_center).norm();
+                tmp_f_score = tmp_g_score + lambda_heu * tie_breaker * (pro_state.head(2) - end_state.head(2)).norm();
                 
 
                 if (pro_node == NULL)
@@ -369,7 +278,7 @@ namespace trailer_planner
                     if (use_node_num == allocate_num)
                     {
                         std::cout << "run out of memory." << std::endl;
-                        return paths[0];
+                        return ackermann_path;
                     }
                 }
                 else if (pro_node->node_state == OPEN)
@@ -390,7 +299,7 @@ namespace trailer_planner
 
         visExpanded();
 
-        return paths[0];
+        return ackermann_path;
     }
 
     std::vector<Eigen::VectorXd> HybridAstar::plan(const Eigen::VectorXd& start_state, const Eigen::VectorXd& end_state)
@@ -461,7 +370,6 @@ namespace trailer_planner
                     std::cout << "[Hybrid A*] one-shot time: " << (ros::Time::now()-t1).toSec()*1000 << " ms"<<std::endl;
                     std::cout << "[Hybrid A*] front all time: " << (ros::Time::now()-t0).toSec()*1000 << " ms"<<std::endl;
                     retrievePath(cur_node);
-                    planning_time = (ros::Time::now()-t0).toSec() * 1000.0;
                     return front_end_path;
                 }
             }
@@ -472,7 +380,6 @@ namespace trailer_planner
             {
                 std::cout << "[Hybrid A*] front all time: " << time_consume*1000 << " ms"<<std::endl;
                 retrievePath(cur_node);
-                planning_time = (ros::Time::now()-t0).toSec() * 1000.0;
                 return front_end_path;
             }
             
@@ -578,7 +485,6 @@ namespace trailer_planner
                     if (use_node_num == allocate_num)
                     {
                         std::cout << "run out of memory." << std::endl;
-                        front_end_path.clear();
                         return front_end_path;
                     }
                 }
@@ -599,7 +505,6 @@ namespace trailer_planner
         std::cout << "Kino Astar Failed, No path!!!" << std::endl;
 
         visExpanded();
-        front_end_path.clear();
 
         return front_end_path;
     }

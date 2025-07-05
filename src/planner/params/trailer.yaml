@@ -1,13 +1,15 @@
 trailer:
-  wheel_base: 0.5
-  width: 0.4
-  rear_length: 0.1
-  max_steer: 0.7  # <pi/4
+  wheel_base: 1.9
+  width: 1.5
+  rear_length: 0.2
+  head_length: 0.2
+  max_steer: 1.2  # <70°
   max_dtheta: 1.471  # ≈pi/2-0.1
-  terminal_tol: 0.4
+  terminal_tol_x: 0.6
+  terminal_tol_y: 0.6
   # traillers: len0--Ltail0--Lhead0--len1--Ltial1--Lhead1--len2 ...
 
-  length: [0.6, 0.5, 0.5, 0.5]
-  Ltail: [0.0, 0.0, 0.0]
-  Lhead: [0.8, 0.8, 0.8]
-  init_pthetas: [-15.0, 6.5, -1.57, -0.707, -1.57, -2.26]
+  length: [0.0, 1.8, 1.8, 1.8, 1.8]
+  Ltail: [0.6, 0.0, 0.6, 0.0]
+  Lhead: [0.7, 1.4, 0.7, 1.4]
+  init_pthetas: [-23, -5, 0.0, -0.3, -0.6, -0.9, -1.2]   #ackermann_px, ackermann_py, theta0, theta1, ...

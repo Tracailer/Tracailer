@@ -1,17 +1,16 @@
 random_map:
   map:
-    obs_num: [40, 40, 40] # num of Triangle, Quadrangle, Pentagon, ...
-    # obs_num: [20, 20, 20] # num of Triangle, Quadrangle, Pentagon, ...
-    resolution: 0.1
-    size_x: 40.0
-    size_y: 40.0
+    # obs_num: [40, 40, 40] # num of Triangle, Quadrangle, Pentagon, ...
+    obs_num: [20, 20, 20] # num of Triangle, Quadrangle, Pentagon, ...
+    resolution: 0.01
+    size_x: 80.0
+    size_y: 80.0
     min_width: 0.8
     max_width: 0.9
-    height: 2.0
     min_obs_dis: 1.0
     vis_rate: 1.0
     sensor_rate: 10.0
     sensor_range: 5.0
     fix_generator: true
-    case_id: 0 
+    case_id: 5 # 0: random, 1: narrow, 2: complex, 3: thin gap, 4: point
   

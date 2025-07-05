@@ -3,6 +3,7 @@
 #include <random>
 #include <eigen3/Eigen/Dense>
 #include <ros/ros.h>
+#include <ros/package.h>
 #include <vector>
 #include <nav_msgs/Odometry.h>
 #include <sensor_msgs/PointCloud2.h>
@@ -13,7 +14,8 @@
 #include <pcl/point_types.h>
 #include <pcl/kdtree/kdtree_flann.h>
 #include <pcl_conversions/pcl_conversions.h>
-#include <pcl/filters/voxel_grid.h>
+#include <pcl/io/ply_io.h>
+#include <pcl/io/pcd_io.h>
 
 using namespace std;
 
@@ -32,7 +34,6 @@ uniform_real_distribution<double> rand_y;
 uniform_real_distribution<double> rand_w;
 uniform_real_distribution<double> rand_theta;
 uniform_real_distribution<double> rand_radius;
-uniform_real_distribution<double> rand_h;
 
 // ros
 ros::Timer vis_timer;
@@ -60,7 +61,6 @@ double min_obs_dis = 0.3;
 double vis_rate = 10.0;
 double sensor_rate = 10.0;
 double sensor_range = 5.0;
-double height = 0.0;
 
 // laser
 constexpr int LINE_NUM = 128;
@@ -99,7 +99,6 @@ pcl::PointCloud<pcl::PointXYZ> fillConvexPolygon(vector<Eigen::Vector2d> poly_vs
             down = poly_vs[i][1];
     }
 
-    double max_h = rand_h(eng);
     for (double x=left; x<right+resolution; x+=resolution)
     {
         for (double y=down; y<up+resolution; y+=resolution)
@@ -128,11 +127,7 @@ pcl::PointCloud<pcl::PointXYZ> fillConvexPolygon(vector<Eigen::Vector2d> poly_vs
                 pt.x = x;
                 pt.y = y;
                 pt.z = 0.0;
-                for (double h=0.0; h<=max_h; h+=resolution)
-                {
-                    pt.z = h;
-                    cloud_polygon.push_back(pt);
-                }
+                cloud_polygon.push_back(pt);
             }
         }
     }
@@ -175,7 +170,6 @@ void generateRandomCase()
 
     rand_x = uniform_real_distribution<double>(-size_x / 2.0, size_x / 2.0);
     rand_y = uniform_real_distribution<double>(-size_y / 2.0, size_y / 2.0);
-    rand_h = uniform_real_distribution<double>(height/2.0, height);
 
     // generate polygon obs
     centers.clear();
@@ -220,7 +214,7 @@ void generateRandomCase()
             {
                 pt_random.x = cloud_polygon.second.points[i].x + x;
                 pt_random.y = cloud_polygon.second.points[i].y + y;
-                pt_random.z = cloud_polygon.second.points[i].z;
+                pt_random.z = 0.0;
                 cloud_map.points.push_back(pt_random);
             }
 
@@ -252,11 +246,92 @@ void generateRandomCase()
         }
     }
 
-    pcl::VoxelGrid<pcl::PointXYZ> vg;
-    pcl::PointCloud<pcl::PointXYZ>::Ptr cloudMapPtr(new pcl::PointCloud<pcl::PointXYZ>(cloud_map));
-    vg.setInputCloud(cloudMapPtr);
-    vg.setLeafSize(0.1, 0.1, 0.1f); // 设置体素网格大小
-    vg.filter(cloud_map);
+    cloud_map.width = cloud_map.points.size();
+    cloud_map.height = 1;
+    cloud_map.is_dense = true;
+    has_map = true;
+
+    pcl::toROSMsg(cloud_map, global_msg);
+    global_msg.header.frame_id = "world";
+
+ 	mesh_msg.id = 0;
+ 	mesh_msg.type = visualization_msgs::Marker::TRIANGLE_LIST;
+ 	mesh_msg.action = visualization_msgs::Marker::ADD;
+    mesh_msg.pose.orientation.w = 1.0;
+ 	mesh_msg.scale.x = 1.0;
+ 	mesh_msg.scale.y = 1.0;
+ 	mesh_msg.scale.z = 1.0;
+ 	mesh_msg.color.r = 0.2;
+ 	mesh_msg.color.g = 0.2;
+ 	mesh_msg.color.b = 0.2;
+ 	mesh_msg.color.a = 0.3;
+    mesh_msg.header.frame_id = "world";
+}
+
+void generateNarrowCase()
+{
+    pcl::PointXYZ pt_random;
+
+    vector<double> px;
+    vector<double> py;
+    px.push_back(0.0);
+    px.push_back(0.0);
+    py.push_back(3.0);
+    py.push_back(-3.0);
+
+    for (size_t p=0; p<px.size(); p++)
+    {
+        double x = px[p];
+        double y = py[p];
+
+        // generate polygon obs
+        x = floor(x / resolution) * resolution + resolution / 2.0;
+        y = floor(y / resolution) * resolution + resolution / 2.0;
+        
+        pair<vector<Eigen::Vector2d>, pcl::PointCloud<pcl::PointXYZ>> cloud_polygon;
+        vector<Eigen::Vector2d> vs;
+        double w = 2;
+        vs.push_back(Eigen::Vector2d(-3, -w));
+        vs.push_back(Eigen::Vector2d(3, -w));
+        vs.push_back(Eigen::Vector2d(3, w));
+        vs.push_back(Eigen::Vector2d(-3, w));
+        cloud_polygon.first = vs;
+        cloud_polygon.second = fillConvexPolygon(vs);
+
+        for (size_t i=0; i<cloud_polygon.second.points.size(); i++)
+        {
+            pt_random.x = cloud_polygon.second.points[i].x + x;
+            pt_random.y = cloud_polygon.second.points[i].y + y;
+            pt_random.z = 0.0;
+            cloud_map.points.push_back(pt_random);
+        }
+
+        vector<Eigen::Vector2d> vector_polygon = cloud_polygon.first;
+        geometry_msgs::Point init_p;
+        init_p.x = vector_polygon[0].x() + x;
+        init_p.y = vector_polygon[0].y() + y;
+        init_p.z = 0.0;
+        polygon_msg.data.push_back(4);
+        polygon_msg.data.push_back(init_p.x);
+        polygon_msg.data.push_back(init_p.y);
+        for (int i=1; i<3; i++)
+        {
+            mesh_msg.points.push_back(init_p);
+            geometry_msgs::Point p;
+            p.x = vector_polygon[i].x() + x;
+            p.y = vector_polygon[i].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+            polygon_msg.data.push_back(p.x);
+            polygon_msg.data.push_back(p.y);
+            p.x = vector_polygon[i+1].x() + x;
+            p.y = vector_polygon[i+1].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+        }
+        polygon_msg.data.push_back(vector_polygon.back().x()+x);
+        polygon_msg.data.push_back(vector_polygon.back().y()+y);
+    }
 
     cloud_map.width = cloud_map.points.size();
     cloud_map.height = 1;
@@ -278,6 +353,337 @@ void generateRandomCase()
  	mesh_msg.color.b = 0.2;
  	mesh_msg.color.a = 0.3;
     mesh_msg.header.frame_id = "world";
+}
+
+void generateComplexCase()
+{
+    pcl::PointXYZ pt_random;
+
+    vector<double> px{0.0, 0.0, -4.0, -6.0};
+    vector<double> py{-3.0, 3.0, -3.0, 0.0};
+    double w = 2.5;
+    // double w = 2.6;
+    vector<Eigen::Vector2d> a1{{-3.0, -w}, {3.0, -w}, {3.0, w}, {-3.0, w}};
+    vector<Eigen::Vector2d> a2{{-3.0, -w}, {3.0, -w}, {3.0, w}, {-3.0, w}};
+    vector<Eigen::Vector2d> a3{{-1.0, -2.0}, {1.0, -2.0}, {1.0, 2.0}, {-1.0, 2.0}};
+    vector<Eigen::Vector2d> a4{{-1.0, -5.0}, {1.0, -5.0}, {1.0, 5.0}, {-1.0, 5.0}};
+    vector<vector<Eigen::Vector2d>> vs_list{a1, a2, a3, a4};
+
+    for (size_t p=0; p<px.size(); p++)
+    {
+        double x = px[p];
+        double y = py[p];
+
+        // generate polygon obs
+        x = floor(x / resolution) * resolution + resolution / 2.0;
+        y = floor(y / resolution) * resolution + resolution / 2.0;
+        
+        pair<vector<Eigen::Vector2d>, pcl::PointCloud<pcl::PointXYZ>> cloud_polygon;
+        cloud_polygon.first = vs_list[p];
+        cloud_polygon.second = fillConvexPolygon(vs_list[p]);
+
+        for (size_t i=0; i<cloud_polygon.second.points.size(); i++)
+        {
+            pt_random.x = cloud_polygon.second.points[i].x + x;
+            pt_random.y = cloud_polygon.second.points[i].y + y;
+            pt_random.z = 0.0;
+            cloud_map.points.push_back(pt_random);
+        }
+
+        vector<Eigen::Vector2d> vector_polygon = cloud_polygon.first;
+        geometry_msgs::Point init_p;
+        init_p.x = vector_polygon[0].x() + x;
+        init_p.y = vector_polygon[0].y() + y;
+        init_p.z = 0.0;
+        polygon_msg.data.push_back(4);
+        polygon_msg.data.push_back(init_p.x);
+        polygon_msg.data.push_back(init_p.y);
+        for (int i=1; i<3; i++)
+        {
+            mesh_msg.points.push_back(init_p);
+            geometry_msgs::Point p;
+            p.x = vector_polygon[i].x() + x;
+            p.y = vector_polygon[i].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+            polygon_msg.data.push_back(p.x);
+            polygon_msg.data.push_back(p.y);
+            p.x = vector_polygon[i+1].x() + x;
+            p.y = vector_polygon[i+1].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+        }
+        polygon_msg.data.push_back(vector_polygon.back().x()+x);
+        polygon_msg.data.push_back(vector_polygon.back().y()+y);
+    }
+
+    cloud_map.width = cloud_map.points.size();
+    cloud_map.height = 1;
+    cloud_map.is_dense = true;
+    has_map = true;
+
+    pcl::toROSMsg(cloud_map, global_msg);
+    global_msg.header.frame_id = "world";
+
+ 	mesh_msg.id = 0;
+ 	mesh_msg.type = visualization_msgs::Marker::TRIANGLE_LIST;
+ 	mesh_msg.action = visualization_msgs::Marker::ADD;
+    mesh_msg.pose.orientation.w = 1.0;
+ 	mesh_msg.scale.x = 1.0;
+ 	mesh_msg.scale.y = 1.0;
+ 	mesh_msg.scale.z = 1.0;
+ 	mesh_msg.color.r = 0.2;
+ 	mesh_msg.color.g = 0.2;
+ 	mesh_msg.color.b = 0.2;
+ 	mesh_msg.color.a = 0.3;
+    mesh_msg.header.frame_id = "world";
+}
+
+void generateThinGapCase()
+{
+    pcl::PointXYZ pt_random;
+
+    vector<double> px{15.0, -15.0, 0.0, 0.0};
+    vector<double> py{0.0, 0.0, 15.0, -15.0};
+    double w = 0.05;
+    // double w = 2.6;
+    double gap_width_half = 0.4;
+    vector<Eigen::Vector2d> wall1{{-0.2, -15.0}, {0.2, -15.0}, {0.2, 15.0}, {-0.2, 15.0}};
+    vector<Eigen::Vector2d> wall2{{-15.0, -0.2}, {15.0, -0.2}, {15.0, 0.2}, {-15.0, 0.2}};
+    vector<vector<Eigen::Vector2d>> vs_list{wall1, wall1, wall2, wall2};
+    vector<Eigen::Vector2d> pgap{{10.0, -10.0}, 
+                                {-8.0, -6.0}, 
+                                {-8.0, -2.0},
+                                {2.0, 2.0},
+                                {6.0, 4.0},
+                                {-2.0, 7.0},
+                                {3.0, 10.0}, 
+                                {2.0, 14.0},};
+    for (size_t i=0; i<pgap.size(); i++)
+    {
+        double h = (pgap[i].x() + 15.0 - gap_width_half)/2.0;
+        vector<Eigen::Vector2d> gap1{{-h, -w}, {h, -w}, {h, w}, {-h, w}};
+        vs_list.push_back(gap1);
+        px.push_back(pgap[i].x() - h - gap_width_half);
+        py.push_back(pgap[i].y());
+        h = (15.0 - pgap[i].x() - gap_width_half)/2.0;
+        vector<Eigen::Vector2d> gap2{{-h, -w}, {h, -w}, {h, w}, {-h, w}};
+        vs_list.push_back(gap2);
+        px.push_back(pgap[i].x() + h + gap_width_half);
+        py.push_back(pgap[i].y());
+    }
+
+    for (size_t p=0; p<px.size(); p++)
+    {
+        double x = px[p];
+        double y = py[p];
+
+        // generate polygon obs
+        x = floor(x / resolution) * resolution + resolution / 2.0;
+        y = floor(y / resolution) * resolution + resolution / 2.0;
+        
+        pair<vector<Eigen::Vector2d>, pcl::PointCloud<pcl::PointXYZ>> cloud_polygon;
+        cloud_polygon.first = vs_list[p];
+        cloud_polygon.second = fillConvexPolygon(vs_list[p]);
+
+        for (size_t i=0; i<cloud_polygon.second.points.size(); i++)
+        {
+            pt_random.x = cloud_polygon.second.points[i].x + x;
+            pt_random.y = cloud_polygon.second.points[i].y + y;
+            pt_random.z = 0.0;
+            cloud_map.points.push_back(pt_random);
+        }
+
+        vector<Eigen::Vector2d> vector_polygon = cloud_polygon.first;
+        geometry_msgs::Point init_p;
+        init_p.x = vector_polygon[0].x() + x;
+        init_p.y = vector_polygon[0].y() + y;
+        init_p.z = 0.0;
+        polygon_msg.data.push_back(4);
+        polygon_msg.data.push_back(init_p.x);
+        polygon_msg.data.push_back(init_p.y);
+        for (int i=1; i<3; i++)
+        {
+            mesh_msg.points.push_back(init_p);
+            geometry_msgs::Point p;
+            p.x = vector_polygon[i].x() + x;
+            p.y = vector_polygon[i].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+            polygon_msg.data.push_back(p.x);
+            polygon_msg.data.push_back(p.y);
+            p.x = vector_polygon[i+1].x() + x;
+            p.y = vector_polygon[i+1].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+        }
+        polygon_msg.data.push_back(vector_polygon.back().x()+x);
+        polygon_msg.data.push_back(vector_polygon.back().y()+y);
+    }
+
+    cloud_map.width = cloud_map.points.size();
+    cloud_map.height = 1;
+    cloud_map.is_dense = true;
+    has_map = true;
+
+    pcl::toROSMsg(cloud_map, global_msg);
+    global_msg.header.frame_id = "world";
+
+ 	mesh_msg.id = 0;
+ 	mesh_msg.type = visualization_msgs::Marker::TRIANGLE_LIST;
+ 	mesh_msg.action = visualization_msgs::Marker::ADD;
+    mesh_msg.pose.orientation.w = 1.0;
+ 	mesh_msg.scale.x = 1.0;
+ 	mesh_msg.scale.y = 1.0;
+ 	mesh_msg.scale.z = 1.0;
+ 	mesh_msg.color.r = 0.2;
+ 	mesh_msg.color.g = 0.2;
+ 	mesh_msg.color.b = 0.2;
+ 	mesh_msg.color.a = 0.3;
+    mesh_msg.header.frame_id = "world";
+}
+
+void generatePointCase()
+{
+    pcl::PointXYZ pt_random;
+
+    double w = 0.01;
+    double h = 3.0;
+    double gap = 0.7;
+    double x_cord = 2.0;
+    vector<double> px{x_cord, x_cord};
+    vector<double> py{h-0.5, h-0.5};
+    py[1] = py[1] - 2*h - gap;
+    vector<Eigen::Vector2d> point{{-w, -h}, {w, -h}, {w, h}, {-w, h}};
+    vector<vector<Eigen::Vector2d>> vs_list({point, point});
+
+    double h_temp[2] = {h+0.5, h};
+    for (int i=0; i<2; i++)
+    {
+        x_cord += 3.0;
+        double y = h_temp[i];
+        px.push_back(x_cord);
+        px.push_back(x_cord);
+        py.push_back(y);
+        py.push_back(y-2*h-gap);
+        vs_list.push_back(point);
+        vs_list.push_back(point);
+    }
+
+    // for (size_t p=0; p<1; p++)
+    for (size_t p=0; p<px.size(); p++)
+    {
+        double x = px[p];
+        double y = py[p];
+
+        // generate polygon obs
+        x = floor(x / resolution) * resolution + resolution / 2.0;
+        y = floor(y / resolution) * resolution + resolution / 2.0;
+        
+        pair<vector<Eigen::Vector2d>, pcl::PointCloud<pcl::PointXYZ>> cloud_polygon;
+        cloud_polygon.first = vs_list[p];
+        cloud_polygon.second = fillConvexPolygon(vs_list[p]);
+
+        for (size_t i=0; i<cloud_polygon.second.points.size(); i++)
+        {
+            pt_random.x = cloud_polygon.second.points[i].x + x;
+            pt_random.y = cloud_polygon.second.points[i].y + y;
+            pt_random.z = 0.0;
+            cloud_map.points.push_back(pt_random);
+        }
+
+        vector<Eigen::Vector2d> vector_polygon = cloud_polygon.first;
+        geometry_msgs::Point init_p;
+        init_p.x = vector_polygon[0].x() + x;
+        init_p.y = vector_polygon[0].y() + y;
+        init_p.z = 0.0;
+        polygon_msg.data.push_back(4);
+        polygon_msg.data.push_back(init_p.x);
+        polygon_msg.data.push_back(init_p.y);
+        for (int i=1; i<3; i++)
+        {
+            mesh_msg.points.push_back(init_p);
+            geometry_msgs::Point p;
+            p.x = vector_polygon[i].x() + x;
+            p.y = vector_polygon[i].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+            polygon_msg.data.push_back(p.x);
+            polygon_msg.data.push_back(p.y);
+            p.x = vector_polygon[i+1].x() + x;
+            p.y = vector_polygon[i+1].y() + y;
+            p.z = 0.0;
+            mesh_msg.points.push_back(p);
+        }
+        polygon_msg.data.push_back(vector_polygon.back().x()+x);
+        polygon_msg.data.push_back(vector_polygon.back().y()+y);
+    }
+
+    cloud_map.width = cloud_map.points.size();
+    cloud_map.height = 1;
+    cloud_map.is_dense = true;
+    has_map = true;
+
+    pcl::toROSMsg(cloud_map, global_msg);
+    global_msg.header.frame_id = "world";
+
+ 	mesh_msg.id = 0;
+ 	mesh_msg.type = visualization_msgs::Marker::TRIANGLE_LIST;
+ 	mesh_msg.action = visualization_msgs::Marker::ADD;
+    mesh_msg.pose.orientation.w = 1.0;
+ 	mesh_msg.scale.x = 1.0;
+ 	mesh_msg.scale.y = 1.0;
+ 	mesh_msg.scale.z = 1.0;
+ 	mesh_msg.color.r = 0.2;
+ 	mesh_msg.color.g = 0.2;
+ 	mesh_msg.color.b = 0.2;
+ 	mesh_msg.color.a = 0.3;
+    mesh_msg.header.frame_id = "world";
+}
+
+void generateParkCase()
+{
+    if (pcl::io::loadPCDFile<pcl::PointXYZ>(ros::package::getPath("random_map_generator")\
+        +"/meshes/park.pcd", cloud_map) == -1)
+    {
+        PCL_ERROR("Failed to read PCD file.\n");
+        return;
+    }
+
+    for (size_t i=0; i<cloud_map.points.size(); i++)
+    {
+        double temp = cloud_map.points[i].z;
+        if (temp < 1e-3)
+        {
+            cloud_map.points[i].x = 100.0;
+            cloud_map.points[i].y = 100.0;
+            cloud_map.points[i].z = 100.0;
+            continue;
+        }
+    }
+
+    cloud_map.width = cloud_map.points.size();
+    cloud_map.height = 1;
+    cloud_map.is_dense = true;
+    has_map = true;
+
+    pcl::toROSMsg(cloud_map, global_msg);
+    global_msg.header.frame_id = "world";
+
+ 	mesh_msg.id = 0;
+ 	mesh_msg.type = visualization_msgs::Marker::MESH_RESOURCE;
+ 	mesh_msg.action = visualization_msgs::Marker::ADD;
+    mesh_msg.pose.orientation.w = 1.0;
+ 	mesh_msg.scale.x = 1.0;
+ 	mesh_msg.scale.y = 1.0;
+ 	mesh_msg.scale.z = 1.0;
+ 	mesh_msg.color.a = 0.5;
+ 	mesh_msg.color.r = 0.0;
+ 	mesh_msg.color.g = 0.0;
+ 	mesh_msg.color.b = 0.0;
+    mesh_msg.header.frame_id = "world";
+    mesh_msg.mesh_resource = "package://random_map_generator/meshes/park.dae";
+    return;
 }
 
 void visCallback(const ros::TimerEvent &e)
@@ -367,7 +773,6 @@ int main (int argc, char** argv)
 	nh.getParam("map/vis_rate", vis_rate);
 	nh.getParam("map/sensor_rate", sensor_rate);
 	nh.getParam("map/sensor_range", sensor_range);
-	nh.getParam("map/height", height);
 	nh.getParam("map/case_id", case_id);
 
     if (!fix_generator)
@@ -388,6 +793,21 @@ int main (int argc, char** argv)
     {
         case 0:
             generateRandomCase();
+            break;
+        case 1:
+            generateNarrowCase();
+            break;
+        case 2:
+            generateComplexCase();
+            break;
+        case 3:
+            generateThinGapCase();
+            break;
+        case 4:
+            generatePointCase();
+            break;
+        case 5:
+            generateParkCase();
             break;
         default:
             generateRandomCase();

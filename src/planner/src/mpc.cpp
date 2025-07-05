@@ -7,8 +7,10 @@ void MPC::init(ros::NodeHandle &nh)
     vector<double> Q_ ;
     vector<double> R_;
     vector<double> Rd_;
+    double cpt_time; 
 
     trailer.init(nh);
+    nh.param("mpc/cpt_time", cpt_time, -1.0);
     nh.param("mpc/dt", dt, -1.0);
     nh.param("mpc/predict_steps", Npre, -1);
     nh.param("mpc/max_speed", max_speed, -1.0);
@@ -48,18 +50,18 @@ void MPC::init(ros::NodeHandle &nh)
     predict_pub = nh.advertise<visualization_msgs::Marker>("predict_path", 10);
     ref_pub = nh.advertise<visualization_msgs::Marker>("reference_path", 10);
 
-    cmd_timer = nh.createTimer(ros::Duration(0.03), &MPC::cmdCallback, this);
+    cmd_timer = nh.createTimer(ros::Duration(cpt_time), &MPC::cmdCallback, this);
 
     odom_sub = nh.subscribe("odom", 100, &MPC::rcvOdomCallBack, this);
-    arc_traj_sub = nh.subscribe("arc_traj", 100, &MPC::rcvArcTrajCallBack, this);
+        arc_traj_sub = nh.subscribe("arc_traj", 100, &MPC::rcvArcTrajCallBack, this);
     return;
 }
 
 void MPC::rcvArcTrajCallBack(planner::ArcTrailerTrajConstPtr msg)
-{
-    traj_analyzer.setTraj(msg);
-    receive_traj = true;
-    
+    {
+        traj_analyzer.setTraj(msg);
+        receive_traj = true;
+        
     return;
 }
 
@@ -84,21 +86,21 @@ void MPC::cmdCallback(const ros::TimerEvent &e)
     if (!has_odom || !receive_traj)
         return;
     
-    xref = traj_analyzer.getRefPoints(Npre, dt);
-    if (traj_analyzer.at_goal || xref.empty())
-    {
-        cmd.speed = 0.0;
-        cmd.steering_angle = 0.0;
-        for (size_t i=0; i<TRAILER_NUM+3; i++)
-            x_0(i) = now_state.data(i);
-        u_0 = {0, 0};
-        X_sol = repmat(x_0, 1, Npre);
-        U_sol = repmat(u_0, 1, Npre);
-    }
-    else
-    {
-        smooth_yaw(xref);
-        getCmd();
+        xref = traj_analyzer.getRefPoints(Npre, dt);
+        if (traj_analyzer.at_goal || xref.empty())
+        {
+            cmd.speed = 0.0;
+            cmd.steering_angle = 0.0;
+            for (size_t i=0; i<TRAILER_NUM+3; i++)
+                x_0(i) = now_state.data(i);
+            u_0 = {0, 0};
+            X_sol = repmat(x_0, 1, Npre);
+            U_sol = repmat(u_0, 1, Npre);
+        }
+        else
+        {
+            smooth_yaw(xref);
+            getCmd();
     }
 
     cmd_pub.publish(cmd);
@@ -171,11 +173,18 @@ void MPC::getCmd(void)
     nlp.set_initial(X, X_sol);
     nlp.set_initial(U, U_sol);
     nlp.solver("sqpmethod", options);
+    // nlp.solver("ipopt", options);
     nlp.minimize(J);
 
     try
     {
+        ros::Time a1 = ros::Time::now();
         const casadi::OptiSol sol = nlp.solve();
+        double sol_time = (ros::Time::now() - a1).toSec() *1000.0;
+        if (sol_time > cpt_time * 1000.0)
+        {
+            ROS_WARN("MPC solve time: %f ms", sol_time);
+        }
         X_sol = sol.value(X);
         U_sol = sol.value(U);
         DM cmd_0 = U_sol(all, 0);

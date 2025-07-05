@@ -7,14 +7,15 @@ message(CMAKE_CURRENT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
 #! Choose the num of the trailer
 # add_definitions(-DTRAILER_NUM=1)
 # add_definitions(-DTRAILER_NUM=2)
-add_definitions(-DTRAILER_NUM=3)
+# add_definitions(-DTRAILER_NUM=3)
+add_definitions(-DTRAILER_NUM=4)
 
 set(CMAKE_BUILD_TYPE "Release")
 # set(CMAKE_BUILD_TYPE "Debug")
 ADD_COMPILE_OPTIONS(-std=c++11 )
 ADD_COMPILE_OPTIONS(-std=c++14 )
-set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall")
-# set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
+# set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall")
+set(CMAKE_CXX_FLAGS_RELEASE "-O3 -Wall -g")
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${PROJECT_SOURCE_DIR}/cmake_modules)
 
 find_package(catkin REQUIRED COMPONENTS

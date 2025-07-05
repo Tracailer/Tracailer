@@ -32,6 +32,7 @@ class MPC
 private:
     // parameters
     /// algorithm param
+    double cpt_time = 0.1;
     double du_th = 0.1;
     double dt = 0.2;
     int Npre = 5;
@@ -76,8 +77,8 @@ private:
     // ros interface
 	ros::NodeHandle node;
     ros::Timer cmd_timer;
-    ros::Publisher cmd_pub, predict_pub, ref_pub;
-    ros::Subscriber odom_sub, arc_traj_sub;
+    ros::Publisher cmd_pub, follow_pub, predict_pub, ref_pub, err_pub, next_begin_pub;
+    ros::Subscriber odom_sub, traj_sub, trigger_sub, arc_traj_sub;
     ackermann_msgs::AckermannDrive cmd;
     void cmdCallback(const ros::TimerEvent &e);
     void rcvOdomCallBack(planner::TrailerStatePtr msg);
@@ -136,12 +137,17 @@ private:
         MX x_next_x = dt * mtimes(cos(x_now(2)), u_now(0)) + x_now(0);
         MX x_next_y = dt * mtimes(sin(x_now(2)), u_now(0)) + x_now(1);
         MX v = u_now(0);
-        MX x_next_theta = dt * u_now(0) * tan(u_now(1)) / trailer.wheel_base + x_now(2);
+        MX dth0 = u_now(0) * tan(u_now(1)) / trailer.wheel_base;
+        MX x_next_theta = dt * dth0 + x_now(2);
         x_next = vertcat(x_next_x, x_next_y, x_next_theta);
         for (size_t i=0; i<TRAILER_NUM; i++)
         {
-            x_next = vertcat(x_next, x_now(i+2) + dt * v * sin(x_now(i+2)-x_now(i+3)) / trailer.Lhead[i]);
-            v = v * cos(x_now(i+2)-x_now(i+3));
+            MX dth_temp = dth0;
+            dth0 = (v * sin(x_now(i+2)-x_now(i+3))
+                   - dth0 * trailer.Ltail[i] * cos(x_now(i+2)-x_now(i+3))) / trailer.Lhead[i];
+            x_next = vertcat(x_next, x_now(i+2) + dt * dth0);
+            v = v * cos(x_now(i+2)-x_now(i+3)) 
+                + dth_temp * trailer.Ltail[i] * sin(x_now(i+2)-x_now(i+3));
         }
 
         return x_next;
@@ -150,7 +156,7 @@ private:
     void drawPredictPath(void)
     {
         int id = 0;
-        double sc = 0.05;
+        double sc = 0.5;
         visualization_msgs::Marker sphere, line_strip;
         sphere.header.frame_id = line_strip.header.frame_id = "world";
         sphere.header.stamp = line_strip.header.stamp = ros::Time::now();
@@ -186,7 +192,7 @@ private:
     void drawRefPath(void)
     {
         int id = 0;
-        double sc = 0.05;
+        double sc = 0.5;
         visualization_msgs::Marker sphere, line_strip;
         sphere.header.frame_id = line_strip.header.frame_id = "world";
         sphere.header.stamp = line_strip.header.stamp = ros::Time::now();

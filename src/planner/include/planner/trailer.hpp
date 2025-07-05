@@ -23,9 +23,11 @@ namespace trailer_planner
             double wheel_base;
             double width;
             double rear_length;
+            double head_length;
             double max_steer;
             double max_dtheta;
-            double terminal_tol;
+            double terminal_tol_x;
+            double terminal_tol_y;
             double box_length;
             double box_width;
             vector<double> length;
@@ -36,11 +38,8 @@ namespace trailer_planner
             Eigen::Matrix2Xd terminal_points;
             visualization_msgs::Marker mesh_msg;
             visualization_msgs::MarkerArray array_msg;
-            visualization_msgs::Marker tractor_msg;
-            visualization_msgs::Marker trailer_msg;
 
             ros::Publisher mesh_pub;
-            ros::Publisher t0_pub, t1_pub, t2_pub, t3_pub;
             ros::Publisher terminal_pub;
             
         public:
@@ -49,50 +48,38 @@ namespace trailer_planner
                 nh.getParam("/trailer/wheel_base", wheel_base);
                 nh.getParam("/trailer/width", width);
                 nh.getParam("/trailer/rear_length", rear_length);
+                nh.getParam("/trailer/head_length", head_length);
                 nh.getParam("/trailer/max_steer", max_steer);
                 nh.getParam("/trailer/max_dtheta", max_dtheta);
-                nh.getParam("/trailer/terminal_tol", terminal_tol);
+                nh.getParam("/trailer/terminal_tol_x", terminal_tol_x);
+                nh.getParam("/trailer/terminal_tol_y", terminal_tol_y);
                 nh.param<std::vector<double>>("/trailer/length", length, std::vector<double>());
                 nh.param<std::vector<double>>("/trailer/Ltail", Ltail, std::vector<double>());
                 nh.param<std::vector<double>>("/trailer/Lhead", Lhead, std::vector<double>());
                 nh.param<std::vector<double>>("/trailer/init_pthetas", pthetas, std::vector<double>());
 
-                if (Lhead.size() > TRAILER_NUM)
-                {
-                    int delte_num = Lhead.size() - TRAILER_NUM;
-                    for (int i=0; i<delte_num; i++)
-                    {
-                        length.pop_back();
-                        Lhead.pop_back();
-                        Ltail.pop_back();
-                        pthetas.pop_back();
-                    }
-                }
-
                 mesh_pub = nh.advertise<visualization_msgs::MarkerArray>("trailer/mesh", 1);
                 terminal_pub = nh.advertise<visualization_msgs::Marker>("trailer/terminal", 1);
-                t0_pub = nh.advertise<visualization_msgs::Marker>("trailer/t0", 1);
-                t1_pub = nh.advertise<visualization_msgs::Marker>("trailer/t1", 1);
-                t2_pub = nh.advertise<visualization_msgs::Marker>("trailer/t2", 1);
-                t3_pub = nh.advertise<visualization_msgs::Marker>("trailer/t3", 1);
 
                 assert(TRAILER_NUM==Lhead.size());
                 assert(TRAILER_NUM==Ltail.size());
                 assert(TRAILER_NUM==pthetas.size()-3);
+                if (length[0] == 0.0)
+                    length[0] = rear_length + wheel_base + head_length;
 
-                box_length = length[0] - rear_length + length[length.size()-1] / 2.0 + terminal_tol;
+                box_length = length[0] + terminal_tol_x;
                 for (size_t i=0; i<Lhead.size(); i++)
                 {
                     box_length += Lhead[i];
                     box_length += Ltail[i];
                 }
-                box_width = width + terminal_tol;
+                box_width = width + terminal_tol_y;
 
                 mesh_msg.id = 0;
                 mesh_msg.type = visualization_msgs::Marker::LINE_LIST;
                 mesh_msg.action = visualization_msgs::Marker::ADD;
                 mesh_msg.pose.orientation.w = 1.0;
-                mesh_msg.scale.x = 0.03;
+                mesh_msg.scale.x = 0.05;
                 mesh_msg.color.r = 1.0;
                 mesh_msg.color.g = 0.0;
                 mesh_msg.color.b = 1.0;
@@ -117,54 +104,84 @@ namespace trailer_planner
                 p.y += width;
                 mesh_msg.points.push_back(p);
 
-                // left wheel
-                p.x += rear_length * 0.5;
-                p.y -= rear_length * 0.2;
-                // p.y += rear_length * 0.5;
-                mesh_msg.points.push_back(p);
+                double wheel_width = 0.15;
+
+                // wheel axle
                 p.x += rear_length;
+                p.y -= 1.5 * wheel_width;
+                mesh_msg.points.push_back(p);
+                p.y -= width - 3.0 * wheel_width;
+                mesh_msg.points.push_back(p);
+                p.y = 0.0;
+
+                // left wheel
+                p.x -= wheel_width / 2.0;
+                p.y += 0.5 * width - wheel_width;
+                mesh_msg.points.push_back(p);
+                p.x += wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.y -= rear_length;
+                p.y -= wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.x -= rear_length;
+                p.x -= wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.y += rear_length;
+                p.y += wheel_width;
                 mesh_msg.points.push_back(p);
 
                 // right wheel
-                p.y = p.y - width + 1.3 * rear_length;
-                // p.y -= width;
+                p.y = p.y - width + 3.0 * wheel_width;
                 mesh_msg.points.push_back(p);
-                p.x += rear_length;
-                mesh_msg.points.push_back(p);
-                mesh_msg.points.push_back(p);
-                p.y -= rear_length;
+                p.x += wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.x -= rear_length;
+                p.y -= wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.y += rear_length;
+                p.x -= wheel_width;
+                mesh_msg.points.push_back(p);
+                mesh_msg.points.push_back(p);
+                p.y += wheel_width;
                 mesh_msg.points.push_back(p);
 
-                // front wheel
-                p.x = length[0] - rear_length * 2.2;
-                // p.x = length[0] - rear_length * 1.5;
-                p.y = rear_length * 0.5;
+                // head line
+                p.x = length[0] - head_length - rear_length;
+                p.y = width * 0.5 - 1.5 * wheel_width;
                 mesh_msg.points.push_back(p);
-                p.x += rear_length;
+                p.y -= width - 3.0 * wheel_width;
+                mesh_msg.points.push_back(p);
+
+                // left wheel
+                p.y = 0.0;
+                p.x -= wheel_width / 2.0;
+                p.y += 0.5 * width - wheel_width;
+                mesh_msg.points.push_back(p);
+                p.x += wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.y -= rear_length;
+                p.y -= wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.x -= rear_length;
+                p.x -= wheel_width;
                 mesh_msg.points.push_back(p);
                 mesh_msg.points.push_back(p);
-                p.y += rear_length;
+                p.y += wheel_width;
+                mesh_msg.points.push_back(p);
+
+                // right wheel
+                p.y = p.y - width + 3.0 * wheel_width;
+                mesh_msg.points.push_back(p);
+                p.x += wheel_width;
+                mesh_msg.points.push_back(p);
+                mesh_msg.points.push_back(p);
+                p.y -= wheel_width;
+                mesh_msg.points.push_back(p);
+                mesh_msg.points.push_back(p);
+                p.x -= wheel_width;
+                mesh_msg.points.push_back(p);
+                mesh_msg.points.push_back(p);
+                p.y += wheel_width;
                 mesh_msg.points.push_back(p);
 
                 // tail0
@@ -191,25 +208,27 @@ namespace trailer_planner
                     p.x -= Lhead[i];
                     mesh_msg.points.push_back(p);
 
-                    // box_{i+1}
-                    p.x -= 0.5 * length[i+1];
-                    p.y += 0.5 * width;
-                    mesh_msg.points.push_back(p);
-                    p.x += length[i+1];
-                    mesh_msg.points.push_back(p);
-                    mesh_msg.points.push_back(p);
-                    p.y -= width;
-                    mesh_msg.points.push_back(p);
-                    mesh_msg.points.push_back(p);
-                    p.x -= length[i+1];
-                    mesh_msg.points.push_back(p);
-                    mesh_msg.points.push_back(p);
-                    p.y += width;
-                    mesh_msg.points.push_back(p);
+                    if (Ltail[i] < 1e-4)
+                    {
+                        // box_{i+1}
+                        p.x -= rear_length;
+                        p.y += 0.5 * width;
+                        mesh_msg.points.push_back(p);
+                        p.x += length[i+1];
+                        mesh_msg.points.push_back(p);
+                        mesh_msg.points.push_back(p);
+                        p.y -= width;
+                        mesh_msg.points.push_back(p);
+                        mesh_msg.points.push_back(p);
+                        p.x -= length[i+1];
+                        mesh_msg.points.push_back(p);
+                        mesh_msg.points.push_back(p);
+                        p.y += width;
+                        mesh_msg.points.push_back(p);
+                        p.y = 0.0;
+                        p.x += rear_length;
+                    }
                     
-                    // tail_{i+1}
-                    p.y = 0.0;
-                    p.x += 0.5 * length[i+1];
                     if (i<TRAILER_NUM-1 && Ltail[i+1]>1e-4)
                     {
                         mesh_msg.points.push_back(p);
@@ -218,65 +237,46 @@ namespace trailer_planner
                         p.x += Ltail[i+1];
                     }
 
+                    // wheel axle
+                    p.y += 0.5 * width - 1.5 * wheel_width;
+                    mesh_msg.points.push_back(p);
+                    p.y -= width - 3.0 * wheel_width;
+                    mesh_msg.points.push_back(p);
+                    p.y = 0.0;
+
                     // left_wheel
-                    p.x -= 0.5 * rear_length;
-                    p.y += 0.5 * width - 0.2 * rear_length; 
-                    // p.y += 0.5 * width + 0.5 * rear_length; 
+                    p.x -= 0.5 * wheel_width;
+                    p.y += 0.5 * width - wheel_width; 
                     mesh_msg.points.push_back(p);
-                    p.x += rear_length;
-                    mesh_msg.points.push_back(p);
-                    mesh_msg.points.push_back(p);
-                    p.y -= rear_length;
+                    p.x += wheel_width;
                     mesh_msg.points.push_back(p);
                     mesh_msg.points.push_back(p);
-                    p.x -= rear_length;
+                    p.y -= wheel_width;
                     mesh_msg.points.push_back(p);
                     mesh_msg.points.push_back(p);
-                    p.y += rear_length;
+                    p.x -= wheel_width;
+                    mesh_msg.points.push_back(p);
+                    mesh_msg.points.push_back(p);
+                    p.y += wheel_width;
                     mesh_msg.points.push_back(p);
 
                     // right_wheel
-                    p.y = p.y - width + 1.3 * rear_length;
-                    // p.y -= width;
+                    p.y = p.y - width + 3.0 * wheel_width;
                     mesh_msg.points.push_back(p);
-                    p.x += rear_length;
-                    mesh_msg.points.push_back(p);
-                    mesh_msg.points.push_back(p);
-                    p.y -= rear_length;
+                    p.x += wheel_width;
                     mesh_msg.points.push_back(p);
                     mesh_msg.points.push_back(p);
-                    p.x -= rear_length;
+                    p.y -= wheel_width;
                     mesh_msg.points.push_back(p);
                     mesh_msg.points.push_back(p);
-                    p.y += rear_length;
+                    p.x -= wheel_width;
                     mesh_msg.points.push_back(p);
+                    mesh_msg.points.push_back(p);
+                    p.y += wheel_width;
+                    mesh_msg.points.push_back(p);                    
 
                     array_msg.markers.push_back(mesh_msg);
                 }
-
-                // diao
-                tractor_msg.header.frame_id = "world";
-                tractor_msg.id = 100;
-                tractor_msg.type = visualization_msgs::Marker::MESH_RESOURCE;
-                tractor_msg.action = visualization_msgs::Marker::ADD;
-                tractor_msg.pose.position.x = 0.0;
-                tractor_msg.pose.position.y = 0.0;
-                tractor_msg.pose.position.z = 0.0;
-                tractor_msg.pose.orientation.w = 1.0;
-                tractor_msg.mesh_use_embedded_materials = true;
-                tractor_msg.color.a = 0.0;
-                tractor_msg.color.r = 0.0;
-                tractor_msg.color.g = 0.0;
-                tractor_msg.color.b = 0.0;
-                tractor_msg.scale.x = 0.2;
-                tractor_msg.scale.y = 0.4;
-                tractor_msg.scale.z = 0.2;
-                tractor_msg.mesh_resource = "package://planner/meshes/car0.dae";
-                trailer_msg = tractor_msg;
-                trailer_msg.mesh_resource = "package://planner/meshes/trailer.dae";
-                trailer_msg.scale.x = 1.0;
-                trailer_msg.scale.y = 1.0;
-                trailer_msg.scale.z = 1.0;
             }
 
             inline void showTrailer(const Eigen::VectorXd& state, int id)
@@ -309,37 +309,6 @@ namespace trailer_planner
                     msg.markers[i].pose.orientation.y = 0.0;
                     msg.markers[i].pose.orientation.z = sin(state[i+2]/2.0);
                 }
-
-                // diao
-                tractor_msg.pose.position.x = state[0];
-                tractor_msg.pose.position.y = state[1];
-                tractor_msg.pose.orientation.w = cos(state[2]/2.0);
-                tractor_msg.pose.orientation.x = 0.0;
-                tractor_msg.pose.orientation.y = 0.0;
-                tractor_msg.pose.orientation.z = sin(state[2]/2.0);
-                t0_pub.publish(tractor_msg);
-                trailer_msg.pose.position.x = state[0] - Ltail[0] * cos(state[2]) - Lhead[0] * cos(state[3]);
-                trailer_msg.pose.position.y = state[1] - Ltail[0] * sin(state[2]) - Lhead[0] * sin(state[3]);
-                trailer_msg.pose.orientation.w = cos(state[3]/2.0);
-                trailer_msg.pose.orientation.z = sin(state[3]/2.0);
-                t1_pub.publish(trailer_msg);
-                if (TRAILER_NUM > 1)
-                {
-                    trailer_msg.pose.position.x -= (Lhead[1] * cos(state[4]) + Ltail[1] * cos(state[3]));
-                    trailer_msg.pose.position.y -= (Lhead[1] * sin(state[4]) + Ltail[1] * sin(state[3]));
-                    trailer_msg.pose.orientation.w = cos(state[4]/2.0);
-                    trailer_msg.pose.orientation.z = sin(state[4]/2.0);
-                    t2_pub.publish(trailer_msg);
-                }
-                if (TRAILER_NUM > 2)
-                {
-                    trailer_msg.pose.position.x -= (Lhead[2] * cos(state(5)) + Ltail[2] * cos(state(4)));
-                    trailer_msg.pose.position.y -= (Lhead[2] * sin(state(5)) + Ltail[2] * sin(state(4)));
-                    trailer_msg.pose.orientation.w = cos(state(5)/2.0); 
-                    trailer_msg.pose.orientation.z = sin(state(5)/2.0);
-                    t3_pub.publish(trailer_msg);
-                }
-                
                 mesh_pub.publish(msg);
             }
 
@@ -354,7 +323,7 @@ namespace trailer_planner
                 msg.type = visualization_msgs::Marker::LINE_LIST;
                 msg.action = visualization_msgs::Marker::ADD;
                 msg.pose.orientation.w = 1.0;
-                msg.scale.x = 0.03;
+                msg.scale.x = 0.05;
                 msg.color.r = msg.color.g = msg.color.b = 0.0;
                 msg.color.a = 1.0;
                 msg.header.frame_id = "world";
@@ -406,7 +375,7 @@ namespace trailer_planner
                 state.setConstant(box(2));
                 Eigen::Vector2d half_box(box_length/2.0, box_width/2.0);
                 state.head(2) = box.head(2) + Eigen::Vector2d(cos(box(2)), sin(box(2))) 
-                                                * (box_length/2.0 - length[0] + rear_length - terminal_tol/2.0);
+                                                * (box_length/2.0 - length[0] + rear_length - terminal_tol_x/2.0);
             }
 
             inline double stateError(const Eigen::VectorXd& state0, const Eigen::VectorXd& state1)
@@ -432,25 +401,6 @@ namespace trailer_planner
                 double da = angle1 - angle2;
                 normYaw(da);
                 return da;
-            }
-
-            inline static void dis2Seg(const Eigen::Vector2d &start, 
-                                    const Eigen::Vector2d &end,
-                                    const Eigen::Vector2d &point, 
-                                    Eigen::Vector2d & interact_p,
-                                    double& dist)
-            {
-                Eigen::Vector2d v = end - start;
-                Eigen::Vector2d w = point - start;
-                double t = w.dot(v) / (v.squaredNorm());
-                if (t < 0.0)
-                    t = 0.0;
-                else if (t > 1.0)
-                    t = 1.0;
-
-                interact_p = start + t * v;
-                dist = (point - interact_p).norm();
-                return;
             }
 
             // state: x0, y0, theta0, theta1, theta2, ...
@@ -630,264 +580,6 @@ namespace trailer_planner
                 }
 
                 return !invalid;
-            }
-
-            inline void getOnlySDF(const Eigen::VectorXd& state,
-                                    const Eigen::Vector2d& point,
-                                    double& sdf)
-            {
-                Eigen::VectorXd se2_state;
-                gainSE2State(state, se2_state);
-                sdf = 1e+19;
-
-                for (size_t i = 0; i <TRAILER_NUM+1; i++)
-                {
-                    double yaw = se2_state(3*i+2);
-                    Eigen::Matrix2d egoR;
-                    egoR << cos(yaw), sin(yaw),
-                            -sin(yaw), cos(yaw);
-                    Eigen::Vector2d ego_point = egoR * (point - se2_state.segment(3*i, 2));
-                    std::vector<Eigen::Vector2d> car_points;
-                    for (int j=-1; j<=1; j+=2)
-                        for (int k=-1; k<=1; k+=2)
-                        {
-                            Eigen::Vector2d step(j*length[i] / 2.0, k*width / 2.0);
-                            if (i == 0)
-                            {
-                                if (j > 0)
-                                    step(0) = length[i] - rear_length;
-                                else
-                                    step(0) = -rear_length;
-                            }
-                                
-                            car_points.push_back(step);
-                        }
-                    double dist = 1e+19;
-                    double d_temp;
-                    Eigen::Vector2d interact_p;
-                    dis2Seg(car_points[0], car_points[1], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                        dist = d_temp;
-                    dis2Seg(car_points[0], car_points[2], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                        dist = d_temp;
-                    dis2Seg(car_points[3], car_points[2], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                        dist = d_temp;
-                    dis2Seg(car_points[3], car_points[1], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                        dist = d_temp;
-                    if (ego_point[0] > car_points[0][0] &&
-                        ego_point[0] < car_points[2][0] &&
-                        ego_point[1] > car_points[0][1] &&
-                        ego_point[1] < car_points[1][1])
-                    {
-                        sdf = -dist;
-                        break;
-                    }
-                    if (sdf > dist)
-                        sdf = dist;
-                    if (i < TRAILER_NUM)
-                    {
-                        dis2Seg(se2_state.segment(3*i, 2), se2_state.segment(3*i+3, 2), point, interact_p, dist);
-                        if (sdf > dist)
-                            sdf = dist;
-                    }
-                }
-                return;
-            }
-                    
-            inline void getOnlyGrad(const Eigen::VectorXd& state,
-                                    const Eigen::Vector2d& point,
-                                    Eigen::Vector2d& grad)
-            {
-                Eigen::VectorXd se2_state;
-                gainSE2State(state, se2_state);
-                double sdf = 1e+19;
-
-                for (size_t i = 0; i <TRAILER_NUM+1; i++)
-                {
-                    double yaw = se2_state(3*i+2);
-                    Eigen::Matrix2d egoR;
-                    egoR << cos(yaw), sin(yaw),
-                            -sin(yaw), cos(yaw);
-                    Eigen::Vector2d ego_point = egoR * (point - se2_state.segment(3*i, 2));
-                    std::vector<Eigen::Vector2d> car_points;
-                    for (int j=-1; j<=1; j+=2)
-                        for (int k=-1; k<=1; k+=2)
-                        {
-                            Eigen::Vector2d step(j*length[i] / 2.0, k*width / 2.0);
-                            if (i == 0)
-                            {
-                                if (j > 0)
-                                    step(0) = length[i] - rear_length;
-                                else
-                                    step(0) = -rear_length;
-                            }
-                            car_points.push_back(step);
-                        }
-                    double dist = 1e+19;
-                    Eigen::Vector2d c_temp, v_temp;
-                    double d_temp;
-                    Eigen::Vector2d interact_p;
-                    dis2Seg(car_points[0], car_points[1], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[0] - car_points[1];
-                    }
-                    dis2Seg(car_points[0], car_points[2], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[2] - car_points[0];
-                    }
-                    dis2Seg(car_points[3], car_points[2], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[3] - car_points[2];
-                    }
-                    dis2Seg(car_points[3], car_points[1], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[1] - car_points[3];
-                    }
-                    if (ego_point[0] > car_points[0][0] &&
-                        ego_point[0] < car_points[2][0] &&
-                        ego_point[1] > car_points[0][1] &&
-                        ego_point[1] < car_points[1][1])
-                    {
-                        Eigen::Vector2d grad_vec = egoR.transpose() * c_temp + se2_state.segment(3*i, 2) - point;
-                        if (grad_vec.norm() < 1e-4)
-                            grad = egoR.transpose() * Eigen::Vector2d(v_temp(1), -v_temp(0)).normalized();
-                        else
-                            grad = grad_vec.normalized();
-                        break;
-                    }
-                    if (sdf > dist)
-                    {
-                        sdf = dist;
-                        Eigen::Vector2d grad_vec = point - egoR.transpose() * c_temp - se2_state.segment(3*i, 2);
-                        if (grad_vec.norm() < 1e-4)
-                            grad = egoR.transpose() * Eigen::Vector2d(v_temp(1), -v_temp(0)).normalized();
-                        else
-                            grad = grad_vec.normalized();
-                    }
-                    if (i < TRAILER_NUM)
-                    {
-                        dis2Seg(se2_state.segment(3*i, 2), se2_state.segment(3*i+3, 2), point, interact_p, dist);
-                        if (sdf > dist)
-                        {
-                            sdf = dist;
-                            Eigen::Vector2d grad_vec = point - interact_p;
-                            grad = grad_vec.normalized();
-                        }
-                    }
-                }
-                return;
-            }
-            
-            inline void getSDFWithGrad(const Eigen::VectorXd& state,
-                                        const Eigen::Vector2d& point,
-                                        double& sdf,
-                                        Eigen::Vector2d& grad)
-            {
-                Eigen::VectorXd se2_state;
-                gainSE2State(state, se2_state);
-                sdf = 1e+19;
-
-                for (size_t i = 0; i <TRAILER_NUM+1; i++)
-                {
-                    double yaw = se2_state(3*i+2);
-                    Eigen::Matrix2d egoR;
-                    egoR << cos(yaw), sin(yaw),
-                            -sin(yaw), cos(yaw);
-                    Eigen::Vector2d ego_point = egoR * (point - se2_state.segment(3*i, 2));
-                    std::vector<Eigen::Vector2d> car_points;
-                    for (int j=-1; j<=1; j+=2)
-                        for (int k=-1; k<=1; k+=2)
-                        {
-                            Eigen::Vector2d step(j*length[i] / 2.0, k*width / 2.0);
-                            if (i == 0)
-                            {
-                                if (j > 0)
-                                    step(0) = length[i] - rear_length;
-                                else
-                                    step(0) = -rear_length;
-                            }
-                            car_points.push_back(step);
-                        }
-                    double dist = 1e+19;
-                    Eigen::Vector2d c_temp, v_temp;
-                    double d_temp;
-                    Eigen::Vector2d interact_p;
-                    dis2Seg(car_points[0], car_points[1], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[0] - car_points[1];
-                    }
-                    dis2Seg(car_points[0], car_points[2], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[2] - car_points[0];
-                    }
-                    dis2Seg(car_points[3], car_points[2], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[3] - car_points[2];
-                    }
-                    dis2Seg(car_points[3], car_points[1], ego_point, interact_p, d_temp);
-                    if (d_temp < dist)
-                    {
-                        dist = d_temp;
-                        c_temp = interact_p;
-                        v_temp = car_points[1] - car_points[3];
-                    }
-                    if (ego_point[0] > car_points[0][0] &&
-                        ego_point[0] < car_points[2][0] &&
-                        ego_point[1] > car_points[0][1] &&
-                        ego_point[1] < car_points[1][1])
-                    {
-                        sdf = -dist;
-                        Eigen::Vector2d grad_vec = egoR.transpose() * c_temp + se2_state.segment(3*i, 2) - point;
-                        if (grad_vec.norm() < 1e-4)
-                            grad = egoR.transpose() * Eigen::Vector2d(v_temp(1), -v_temp(0)).normalized();
-                        else
-                            grad = grad_vec.normalized();
-                        break;
-                    }
-                    if (sdf > dist)
-                    {
-                        sdf = dist;
-                        Eigen::Vector2d grad_vec = point - egoR.transpose() * c_temp - se2_state.segment(3*i, 2);
-                        if (grad_vec.norm() < 1e-4)
-                            grad = egoR.transpose() * Eigen::Vector2d(v_temp(1), -v_temp(0)).normalized();
-                        else
-                            grad = grad_vec.normalized();
-                    }
-                    if (i < TRAILER_NUM)
-                    {
-                        dis2Seg(se2_state.segment(3*i, 2), se2_state.segment(3*i+3, 2), point, interact_p, dist);
-                        if (sdf > dist)
-                        {
-                            sdf = dist;
-                            grad = (point - interact_p).normalized();
-                        }
-                    }
-                }
-                return;
             }
 
             typedef shared_ptr<Trailer> Ptr;

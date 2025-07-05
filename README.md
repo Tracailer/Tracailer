@@ -56,5 +56,3 @@ roslaunch planner run_all.launch
 ```
 
 When you see the robot in the Rviz like below, you can use `2D Pose Estimate` to trigger planning.
-
-https://github.com/user-attachments/assets/bf2bb8f0-ab63-451f-96da-7b097f58948a

@@ -134,7 +134,7 @@ namespace trailer_planner
             void init(ros::NodeHandle& nh);
 
             bool optimizeTraj(std::vector<Eigen::VectorXd> init_path, 
-                              double init_vel = 0.0, int piece_num = 0, 
+                              Eigen::Vector2d init_vw = Eigen::Vector2d::Zero(), int piece_num = 0, 
                               Eigen::MatrixXd local_pts = Eigen::MatrixXd::Zero(3, 3));
 
             static double innerCallback(void* ptrObj, const Eigen::VectorXd& x, Eigen::VectorXd& grad);
@@ -157,7 +157,7 @@ namespace trailer_planner
                 double dur = traj.getTotalDuration();
                 std::vector<Eigen::VectorXd> se2_path;
                 std::vector<Eigen::VectorXd> se2_path_node;
-                for (double i = 0; i <= dur - 1e-4; i+=0.01)
+                for (double i = 0; i <= dur - 1e-4; i+=0.1)
                 {
                     Eigen::VectorXd se2_state;
                     Eigen::VectorXd state = traj.getState(i);
