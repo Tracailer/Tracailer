@@ -41,8 +41,8 @@ sudo make install
 Build the project: (you can change the trailer num defined in `src/planner/CMakeLists.txt` by changing the definition of `TRAILER_NUM`)
 
 ```
-git clone https://github.com/ZJU-FAST-Lab/tracailer.git
-cd tracailer
+git clone https://github.com/Tracailer/Tracailer.git
+cd Tracailer
 catkin_make
 ```
 
